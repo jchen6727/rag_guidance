@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ChunkMetadata",
+  "description": "Per-chunk metadata schema for Vertex AI Search DataStore registration and Gemini extraction prompts.",
+  "type": "object",
+  "required": ["doc_id", "source_file", "domain", "doc_type", "page_start", "page_end", "chunk_index"],
+  "properties": {
+    "doc_id": {
+      "type": "string",
+      "description": "SHA-256 hex digest of the source PDF bytes (64 chars).",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_file": {
+      "type": "string",
+      "description": "Original PDF filename (basename only, no path)."
+    },
+    "title": {
+      "type": "string",
+      "description": "Inferred document or chapter title. Empty string if not determinable.",
+      "default": ""
+    },
+    "domain": {
+      "type": "string",
+      "description": "Controlled-vocabulary specialty domain. Must be one of the listed enum values.",
+      "enum": [
+        "cardiology",
+        "oncology",
+        "neurology",
+        "pharmacology",
+        "internal_medicine",
+        "surgery",
+        "pediatrics",
+        "radiology",
+        "pathology",
+        "immunology",
+        "endocrinology",
+        "gastroenterology",
+        "pulmonology",
+        "nephrology",
+        "hematology",
+        "infectious_disease",
+        "psychiatry",
+        "dermatology",
+        "orthopedics",
+        "anatomy",
+        "physiology",
+        "biochemistry",
+        "microbiology",
+        "genetics",
+        "epidemiology",
+        "biostatistics",
+        "other"
+      ]
+    },
+    "subdomain": {
+      "type": "string",
+      "description": "Narrower topic within the domain. Free text; not filterable by default.",
+      "default": ""
+    },
+    "doc_type": {
+      "type": "string",
+      "description": "Document classification. front_matter chunks are excluded from search.",
+      "enum": [
+        "textbook",
+        "clinical_guideline",
+        "research_paper",
+        "review_article",
+        "case_report",
+        "front_matter"
+      ]
+    },
+    "chapter": {
+      "type": "string",
+      "description": "Nearest detected chapter or section heading above this chunk.",
+      "default": ""
+    },
+    "page_start": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "First page of this chunk (1-indexed)."
+    },
+    "page_end": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Last page of this chunk (1-indexed). Equal to page_start for single-page chunks."
+    },
+    "chunk_index": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sequential zero-based index of this chunk within its parent document."
+    },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Key terms extracted by Gemini. 3–10 terms recommended.",
+      "default": []
+    },
+    "entities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Named clinical/scientific entities (drugs, conditions, genes, procedures).",
+      "default": []
+    },
+    "evidence_level": {
+      "type": ["string", "null"],
+      "description": "GRADE evidence level if the chunk contains a clinical recommendation. Null if not applicable.",
+      "enum": ["A", "B", "C", "D", null],
+      "default": null
+    },
+    "year_published": {
+      "type": ["integer", "null"],
+      "description": "Publication year extracted from title page or copyright notice. Null if not found.",
+      "minimum": 1900,
+      "maximum": 2100,
+      "default": null
+    }
+  },
+  "additionalProperties": false,
+  "notes": {
+    "vertex_ai_search": "All top-level string and integer fields (except keywords and entities arrays) are registered as filterable attributes in the DataStore schema. Array fields are stored but not filterable. Schema changes require scripts/setup_vertex_search.py to run UpdateSchema followed by a full re-import.",
+    "controlled_vocab": "The domain enum must be agreed upon by a domain expert before any ingestion run. Adding new enum values is a schema change — see issues.md P3."
+  }
+}
