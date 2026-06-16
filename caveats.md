@@ -60,8 +60,6 @@
 - **IAM over-provisioning risk.** The service account needs broad permissions across GCS, Vertex AI, Document AI, and Discovery Engine. Use a dedicated service account with least-privilege per component; do not reuse a project-level owner account.
 - **No built-in deduplication.** If the same PDF is placed in `corpus/` twice (different filename or after a rename), the pipeline will ingest it as a new document. The content-hash manifest in `uploader.py` mitigates this but only within a single ingestion run — implement cross-run hash checks in a persistent store.
 - **GCS egress costs.** Reading large JSONL chunk files for re-indexing and downloading PDFs for re-extraction incurs egress charges if processed outside the DataStore's region. Co-locate all GCP services in the same region.
-- **Watchdog is a local process.** The watcher is not fault-tolerant; if the host machine restarts, files dropped during the outage will not be processed unless a catch-up scan on startup is implemented. For production, replace with a GCS event-driven trigger (Cloud Functions + Eventarc) instead.
-- **#ALTERNATE — skip the watcher entirely.** `CorpusWatcher.catchup_scan()` performs a single manifest-aware pass over `corpus/` and exits — no `Observer`, no `PDFEventHandler`, no background thread. This is strictly safer for CI/CD pipelines, Kubernetes `Job`s, and scheduled cron-based deployments. The only cost is ingestion latency: files added between runs are not processed until the next invocation. See `issues.md #ALTERNATE` for the full trade-off discussion.
 
 ---
 

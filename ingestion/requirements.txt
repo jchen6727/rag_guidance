@@ -6,6 +6,7 @@
 #   google-cloud-aiplatform  — query/generation path only
 #   tqdm, click              — scripts/ only
 #   pytest*                  — testing only
+#   watchdog                 — observer-based path only; not required for CorpusWatcher.catchup_scan()
 
 # ---------------------------------------------------------------------------
 # Google Cloud (indexer.py, uploader.py, extractor.py, metadata_gen.py)
@@ -55,10 +56,3 @@ pyyaml>=6.0.1
 
 python-dotenv>=1.0.1
 # config/settings.py reads .env at startup
-
-# ---------------------------------------------------------------------------
-# Filesystem Watching (watcher.py)
-# ---------------------------------------------------------------------------
-watchdog>=4.0.1
-# CorpusWatcher / PDFEventHandler — continuous corpus/ monitoring
-# Not needed if using the #ALTERNATE one-time scan path (catchup_scan only)

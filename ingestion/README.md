@@ -10,7 +10,7 @@ End-to-end pipeline for extracting, chunking, annotating, and indexing PDF docum
 corpus/ PDF
     │
     ▼
-watcher.py          CorpusWatcher detects new/modified PDFs
+batch_ingest.py     CorpusScanner.scan() finds unprocessed PDFs
     │  pipeline_callback(path)
     ▼
 extractor.py        PDFExtractor.extract(path) → ExtractedDocument
@@ -33,7 +33,7 @@ indexer.py          VertexSearchIndexer.import_chunks(jsonl_uri) → LRO op name
 Vertex AI Search DataStore (queryable)
 ```
 
-The watcher triggers the pipeline on file events. The batch script (`scripts/batch_ingest.py`) drives the same pipeline without the watcher.
+`scripts/batch_ingest.py` is the primary entry point. It calls `CorpusScanner.scan()`, which drives the pipeline for each unprocessed PDF in a single pass.
 
 ---
 
@@ -41,51 +41,29 @@ The watcher triggers the pipeline on file events. The batch script (`scripts/bat
 
 ### `__init__.py`
 
-Exports the six public classes in call order: `CorpusWatcher`, `PDFExtractor`, `ContextAwareChunker`, `MetadataGenerator`, `GCSUploader`, `VertexSearchIndexer`. No logic; import from here rather than the individual modules.
+Exports the six public classes in call order: `CorpusScanner`, `PDFExtractor`, `ContextAwareChunker`, `MetadataGenerator`, `GCSUploader`, `VertexSearchIndexer`. No logic; import from here rather than the individual modules.
 
 ---
 
-### `watcher.py`
+### `scanner.py`
 
-**Purpose:** Monitor `corpus/` for new PDFs and dispatch them through the ingestion pipeline.
-
-> **#ALTERNATE — One-time corpus scan (no watchdog)**
->
-> Instead of starting a long-lived `Observer`, call `CorpusWatcher.catchup_scan()` directly and then exit. This performs a single pass over `corpus/`, calls `is_processed()` against the manifest for each PDF, and invokes the `pipeline_callback` only for files not yet recorded. No background thread, no `PDFEventHandler`, no signal handling required.
->
-> ```python
-> watcher = CorpusWatcher(corpus_dir, manifest_path, pipeline_fn)
-> watcher._load_manifest()   # load existing state
-> watcher.catchup_scan()     # process new files, update manifest
-> # exit — no observer started
-> ```
->
-> This pattern is preferable for:
-> - **CI/CD pipelines** — run ingestion as a one-shot job step, not a daemon
-> - **Scheduled cron jobs** — trigger a scan on a timer rather than maintaining a persistent process
-> - **Container deployments** — ephemeral containers where a blocking observer would prevent clean shutdown
-> - **Environments where `watchdog` inotify limits are a concern** (each watched directory consumes a kernel inotify watch)
->
-> The trade-off is latency: files added between scheduled runs are not processed until the next invocation, whereas the continuous watcher reacts within seconds. `scripts/batch_ingest.py` is the existing entry point that uses this pattern.
+**Purpose:** Scan `corpus/` for new PDFs and dispatch them through the ingestion pipeline.
 
 **Key classes:**
 
 | Class | Role |
 |---|---|
-| `PDFEventHandler` | Watchdog `FileSystemEventHandler` subclass; filters for `.pdf` extensions and invokes a callback |
-| `CorpusWatcher` | Owns the observer, the manifest, and the catch-up scan |
+| `CorpusScanner` | Owns the manifest and scan logic; `scan()` is the primary entry point |
 
-**Manifest:** A JSON file (`basename → doc_id`) that persists across restarts so already-processed files are skipped. Written atomically (temp-file + rename) on every update.
+**Manifest:** A JSON file (`basename → doc_id`) that persists across runs so already-processed files are skipped. Written atomically (temp-file + rename) on every update.
 
-**Startup sequence:**
+**Primary usage (one-time scan):**
 1. `_load_manifest()` — reads or creates the manifest file
-2. `catchup_scan()` — processes any PDFs in `corpus/` absent from the manifest, alphabetically
-3. Starts the watchdog `Observer` on `corpus/`
-4. Blocks; `stop()` can be called from a signal handler
+2. `scan()` — scans `corpus/`, processes unprocessed PDFs alphabetically, returns
 
-**Dependencies:** `watchdog`, `pathlib`, stdlib `json`; calls the `pipeline_callback` injected at construction (no direct import of other ingestion modules).
+**Dependencies:** `pathlib`, stdlib `json`; calls the `pipeline_callback` injected at construction (no direct import of other ingestion modules). 
 
-**Production note:** Replace with a GCS Eventarc trigger for cloud deployments — this watcher is not fault-tolerant across host restarts.
+**Production note:** For deployments requiring sub-minute ingestion latency, replace the scheduled scan with a GCS Eventarc trigger (Cloud Functions).
 
 ---
 
