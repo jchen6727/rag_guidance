@@ -50,7 +50,6 @@ class CorpusScanner:
         self._corpus_dir = corpus_dir
         self._manifest_path = manifest_path
         self._pipeline_callback = pipeline_callback
-        self._observer: Observer | None = None
         self._manifest: dict[str, str] = {}  # basename -> doc_id
 
     def scan(self) -> None:

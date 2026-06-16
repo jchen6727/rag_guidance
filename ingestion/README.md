@@ -33,7 +33,7 @@ indexer.py          VertexSearchIndexer.import_chunks(jsonl_uri) → LRO op name
 Vertex AI Search DataStore (queryable)
 ```
 
-`scripts/batch_ingest.py` is the primary entry point. It calls `CorpusWatcher.catchup_scan()`, which drives the pipeline for each unprocessed PDF in a single pass. The observer-based path (`CorpusWatcher.start()`) is available for continuous local monitoring but is not the intended deployment pattern.
+`scripts/batch_ingest.py` is the primary entry point. It calls `CorpusScanner.scan()`, which drives the pipeline for each unprocessed PDF in a single pass.
 
 ---
 
@@ -41,7 +41,7 @@ Vertex AI Search DataStore (queryable)
 
 ### `__init__.py`
 
-Exports the six public classes in call order: `CorpusWatcher`, `PDFExtractor`, `ContextAwareChunker`, `MetadataGenerator`, `GCSUploader`, `VertexSearchIndexer`. No logic; import from here rather than the individual modules.
+Exports the six public classes in call order: `CorpusScanner`, `PDFExtractor`, `ContextAwareChunker`, `MetadataGenerator`, `GCSUploader`, `VertexSearchIndexer`. No logic; import from here rather than the individual modules.
 
 ---
 

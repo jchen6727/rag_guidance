@@ -13,7 +13,7 @@
   · Metadata provenance invariant                             §4
       (four fields always overridden from Chunk, never from Gemini)
   · Manifest semantics (basename → doc_id, atomic updates)    §5
-  · catchup_scan idempotency, monotonicity, completeness      §6
+  · CorpusScanner.scan() idempotency, monotonicity, completeness §6
   · Ingest pipeline as typed function composition             §7
 
   What is NOT modelled
@@ -296,7 +296,7 @@ theorem manifest_lookup_after_insert (m : Manifest) (f : Filename) (d : DocId) :
 
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §6  catchup_scan semantics
+-- §6  CorpusScanner.scan() semantics
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Abstract model of one-file ingestion:
@@ -318,11 +318,11 @@ theorem processFile_inserts_new (m : Manifest) (f : Filename) (d : DocId)
     processFile m f d = some (m.insert f d) := by
   simp [processFile, h]
 
-/-- Model of CorpusWatcher.catchup_scan():
+/-- Model of CorpusScanner.scan():
     Fold over the (alphabetically sorted) corpus, processing only files
     absent from the manifest.  `assign` abstracts the doc_id computation
     (SHA-256 of file bytes) to keep the model pure. -/
-def catchupScan
+def corpusScan
     (corpus  : List Filename)
     (m₀      : Manifest)
     (assign  : Filename → DocId) : Manifest :=
@@ -332,15 +332,15 @@ def catchupScan
 -- ── Invariants ────────────────────────────────────────────────────────────────
 
 /-- Idempotency: if every corpus file is already recorded in the manifest,
-    catchupScan returns it unchanged.
+    corpusScan returns it unchanged.
 
     This is the key safety property of the one-time scan pattern:
     running batch_ingest.py twice on the same corpus is a no-op. -/
-theorem catchupScan_idempotent
+theorem corpusScan_idempotent
     (corpus : List Filename) (m : Manifest) (assign : Filename → DocId)
     (hFull : ∀ f ∈ corpus, m.contains f = true) :
-    catchupScan corpus m assign = m := by
-  simp only [catchupScan]
+    corpusScan corpus m assign = m := by
+  simp only [corpusScan]
   induction corpus with
   | nil        => simp [List.foldl]
   | cons f fs ih =>
@@ -351,28 +351,28 @@ theorem catchupScan_idempotent
     intro g hg
     exact hFull g (List.mem_cons.mpr (.inr hg))
 
-/-- Completeness: after catchupScan, every corpus file is in the manifest.
+/-- Completeness: after corpusScan, every corpus file is in the manifest.
     Proof by induction: each step either skips (file already present) or
     inserts (file becomes present), and monotonicity preserves prior entries. -/
-theorem catchupScan_complete
+theorem corpusScan_complete
     (corpus : List Filename) (m₀ : Manifest) (assign : Filename → DocId) :
-    ∀ f ∈ corpus, (catchupScan corpus m₀ assign).contains f = true := by
+    ∀ f ∈ corpus, (corpusScan corpus m₀ assign).contains f = true := by
   sorry
 
-/-- Monotonicity: catchupScan never removes existing manifest entries.
+/-- Monotonicity: corpusScan never removes existing manifest entries.
     Follows from processFile either returning None (manifest unchanged) or
     inserting via manifest_insert_preserves (other entries survive). -/
-theorem catchupScan_monotone
+theorem corpusScan_monotone
     (corpus : List Filename) (m₀ : Manifest) (assign : Filename → DocId)
     (f : Filename) (hf : m₀.contains f = true) :
-    (catchupScan corpus m₀ assign).contains f = true := by
+    (corpusScan corpus m₀ assign).contains f = true := by
   sorry
 
-/-- Determinism: catchupScan with the same inputs always produces the same
+/-- Determinism: corpusScan with the same inputs always produces the same
     manifest (no randomness or IO in the pure model). -/
-theorem catchupScan_deterministic
+theorem corpusScan_deterministic
     (corpus : List Filename) (m₀ : Manifest) (assign : Filename → DocId) :
-    catchupScan corpus m₀ assign = catchupScan corpus m₀ assign := rfl
+    corpusScan corpus m₀ assign = corpusScan corpus m₀ assign := rfl
 
 
 -- ═══════════════════════════════════════════════════════════════════════════════

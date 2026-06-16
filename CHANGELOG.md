@@ -5,23 +5,21 @@
 ## 2026-06-16
 
 ### Changed
-`watcher` -> `scanner` nomenclature (i.e. `CorpusWatcher` -> `CorpusScanner`) change updated to reflect this. `CorpusScanner().scan()`  (via `scripts/batch_ingest.py`) is the canonical ingestion path. Modified files to reinforce decision.
 
-### Changed
-
-- **Primary ingestion pattern is now one-time corpus scan.** `CorpusWatcher` -> `CorpusScanner`  (via `scripts/batch_ingest.py`) replaces the continuous `watchdog` observer as the canonical ingestion path. The observer-based path (`CorpusWatcher.start()`) remains in the module for local development but is no longer the default.
+- **`CorpusWatcher` renamed to `CorpusScanner`; `watcher.py` renamed to `scanner.py`.** `CorpusScanner.scan()` (via `scripts/batch_ingest.py`) is the canonical ingestion path. Observer-based continuous monitoring removed.
 
 ### Documentation updates
 
-- **`ingestion/watcher.py`**: Module docstring rewritten to lead with one-time scan usage; `CorpusWatcher` class docstring updated to show `catchup_scan()` as primary lifecycle; `start()` docstring notes it is the observer-based path only; `catchup_scan()` docstring drops "before the live observer starts" framing.
-- **`ingestion/__init__.py`**: Package docstring updated to note `CorpusWatcher.catchup_scan()` as primary entry point.
-- **`ingestion/README.md`**: Pipeline diagram entry point changed from `watcher.py` to `batch_ingest.py`; watcher.py section restructured with primary/optional usage split; `PDFEventHandler` demoted to optional row in class table; `watchdog` noted as not required for the primary path.
-- **`ingestion/requirements.txt`**: Added comment explaining `watchdog` is excluded because it is not required for `catchup_scan()`.
-- **`CLAUDE.md`**: Ingest path description updated from "triggered by watcher or batch script" to `CorpusWatcher.catchup_scan()` via `batch_ingest.py`; `#ALTERNATE` paragraph rewritten as the primary description.
-- **`structure.md`**: Data flow diagram entry point updated; `watcher.py` directory comment updated; component §1 description rewritten as "Corpus Scanner"; watchdog APIs table entry marked optional.
-- **`caveats.md`** §5: Bullet order reversed — one-time scan is now the lead recommendation; observer-based path noted as the non-fault-tolerant option.
-- **`issues.md`** `#ALTERNATE` section: Renamed to "Chosen Primary Pattern"; decision noted; rationale and latency trade-off preserved as informational.
-- **`requirements.txt`**: Watchdog section heading changed to "Filesystem Watching (optional)"; comment clarifies it is for the observer-based path only.
+- **`ingestion/scanner.py`**: Module and class docstrings updated to `CorpusScanner`/`scan()` nomenclature; dead `_observer` attribute removed.
+- **`ingestion/__init__.py`**: Import updated to `from ingestion.scanner import CorpusScanner`; package docstring updated.
+- **`ingestion/README.md`**: Pipeline diagram entry point updated to `CorpusScanner.scan()`; `__init__.py` export list updated; `scanner.py` section documents `CorpusScanner` only.
+- **`ingestion/requirements.txt`**: `watchdog` noted as excluded (not required for `scan()`).
+- **`CLAUDE.md`**: Ingest path updated to `CorpusScanner.scan()` via `batch_ingest.py`; observer references removed.
+- **`structure.md`**: Data flow diagram, directory layout, and component §1 updated to `scanner.py`/`CorpusScanner.scan()`.
+- **`caveats.md`** §5: Watchdog infrastructure bullets removed; scanner-based approach is the only described path.
+- **`issues.md`**: `#ALTERNATE` section retitled "One-Time Corpus Scan (Chosen Primary Pattern)"; observer/watcher references removed.
+- **`requirements.txt`**: Watchdog section marked optional.
+- **`RAGGuidance.lean`**: `catchupScan` renamed to `corpusScan`; `CorpusWatcher` references updated to `CorpusScanner.scan()`.
 
 ---
 
