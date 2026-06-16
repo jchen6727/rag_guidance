@@ -9,11 +9,11 @@ An end-to-end pipeline that ingests technical/clinical/scientific PDFs, generate
 ## Data Flow
 
 ```
-/corpus (watched dir)
+/corpus (scanned dir)
       │
       ▼
-[1. Watcher] ──────────────────────────────────────────────
-      │ new PDF detected
+[1. CorpusWatcher.catchup_scan()] ─────────────────────────
+      │ via scripts/batch_ingest.py — new PDF found via manifest check
       ▼
 [2. PDF Extractor] (text, tables, page layout)
       │ raw text + structure
@@ -50,7 +50,7 @@ rag_guidance/
 │
 ├── ingestion/
 │   ├── __init__.py
-│   ├── watcher.py                  # Watchdog-based directory monitor
+│   ├── watcher.py                  # Corpus scanner; CorpusWatcher.catchup_scan() is the primary entry point
 │   ├── extractor.py                # PDF text + structure extraction
 │   ├── chunker.py                  # Context-aware chunking logic
 │   ├── metadata_gen.py             # Gemini metadata generation
@@ -96,10 +96,10 @@ rag_guidance/
 
 ## Component Descriptions
 
-### 1. Watcher (`ingestion/watcher.py`)
-Uses `watchdog` to monitor `corpus/` for new or modified PDFs. On detection, triggers the full ingestion pipeline. Tracks processed files via a local manifest to prevent re-ingestion.
+### 1. Corpus Scanner (`ingestion/watcher.py`)
+`CorpusWatcher.catchup_scan()` scans `corpus/` for new PDFs, checks each against the manifest via `is_processed()`, runs the pipeline for unprocessed files in alphabetical order, and returns. Manifest is written atomically after each file. No daemon, no background thread. `scripts/batch_ingest.py` is the entry point.
 
-**#ALTERNATE — one-time corpus scan:** Call `CorpusWatcher.catchup_scan()` directly and exit. Scans all PDFs in `corpus/` once, checks each against the manifest via `is_processed()`, and runs the pipeline only for new files. No `Observer` started, no `PDFEventHandler` needed, no blocking call. Suitable for CI/CD job steps, cron-scheduled containers, or Kubernetes `Job`s where a persistent daemon is not appropriate. Trade-off: ingestion latency equals the scheduling interval rather than seconds. `scripts/batch_ingest.py` is the existing entry point using this pattern.
+The module also contains a watchdog `Observer`-based path (`CorpusWatcher.start()`) for continuous monitoring in local development. This is not the primary deployment pattern — in production, prefer a cron-scheduled container or a GCS Eventarc trigger.
 
 ### 2. PDF Extractor (`ingestion/extractor.py`)
 Extracts text preserving page boundaries, section headers, and table structure. Primary: `pdfplumber` (layout-aware). Fallback: Google Document AI for scanned/complex layouts.
@@ -138,7 +138,7 @@ Assembles a prompt using expert persona template + retrieved chunks, then calls 
 | Vertex AI / Gemini | `google-generativeai>=0.7` or `google-cloud-aiplatform>=1.50` | Metadata extraction, response generation |
 | Google Cloud Storage | `google-cloud-storage>=2.14` | PDF + chunk JSONL staging |
 | Google Document AI | `google-cloud-documentai>=2.24` | Scanned PDF OCR fallback |
-| Watchdog | `watchdog>=4.0` | Local filesystem event monitoring |
+| Watchdog | `watchdog>=4.0` | Local filesystem event monitoring (optional; only needed for the observer-based path) |
 | pdfplumber | `pdfplumber>=0.11` | Primary PDF text + table extraction |
 | sentence-transformers | `sentence-transformers>=3.0` | Semantic chunking embeddings |
 | Pydantic | `pydantic>=2.0` | Config and metadata model validation |

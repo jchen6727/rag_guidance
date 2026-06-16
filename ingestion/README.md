@@ -10,7 +10,7 @@ End-to-end pipeline for extracting, chunking, annotating, and indexing PDF docum
 corpus/ PDF
     │
     ▼
-watcher.py          CorpusWatcher detects new/modified PDFs
+batch_ingest.py     CorpusWatcher.catchup_scan() finds unprocessed PDFs
     │  pipeline_callback(path)
     ▼
 extractor.py        PDFExtractor.extract(path) → ExtractedDocument
@@ -33,7 +33,7 @@ indexer.py          VertexSearchIndexer.import_chunks(jsonl_uri) → LRO op name
 Vertex AI Search DataStore (queryable)
 ```
 
-The watcher triggers the pipeline on file events. The batch script (`scripts/batch_ingest.py`) drives the same pipeline without the watcher.
+`scripts/batch_ingest.py` is the primary entry point. It calls `CorpusWatcher.catchup_scan()`, which drives the pipeline for each unprocessed PDF in a single pass. The observer-based path (`CorpusWatcher.start()`) is available for continuous local monitoring but is not the intended deployment pattern.
 
 ---
 
@@ -47,26 +47,30 @@ Exports the six public classes in call order: `CorpusWatcher`, `PDFExtractor`, `
 
 ### `watcher.py`
 
-**Purpose:** Monitor `corpus/` for new PDFs and dispatch them through the ingestion pipeline.
+**Purpose:** Scan `corpus/` for new PDFs and dispatch them through the ingestion pipeline.
 
 **Key classes:**
 
 | Class | Role |
 |---|---|
-| `PDFEventHandler` | Watchdog `FileSystemEventHandler` subclass; filters for `.pdf` extensions and invokes a callback |
-| `CorpusWatcher` | Owns the observer, the manifest, and the catch-up scan |
+| `CorpusWatcher` | Owns the manifest and scan logic; `catchup_scan()` is the primary entry point |
+| `PDFEventHandler` | Watchdog `FileSystemEventHandler` subclass; only needed for the observer-based continuous path |
 
-**Manifest:** A JSON file (`basename → doc_id`) that persists across restarts so already-processed files are skipped. Written atomically (temp-file + rename) on every update.
+**Manifest:** A JSON file (`basename → doc_id`) that persists across runs so already-processed files are skipped. Written atomically (temp-file + rename) on every update.
 
-**Startup sequence:**
+**Primary usage (one-time scan):**
 1. `_load_manifest()` — reads or creates the manifest file
-2. `catchup_scan()` — processes any PDFs in `corpus/` absent from the manifest, alphabetically
+2. `catchup_scan()` — scans `corpus/`, processes unprocessed PDFs alphabetically, returns
+
+**Observer-based usage (optional, continuous):**
+1. `_load_manifest()` — reads or creates the manifest file
+2. `catchup_scan()` — catch-up pass for files added while the observer was down
 3. Starts the watchdog `Observer` on `corpus/`
 4. Blocks; `stop()` can be called from a signal handler
 
-**Dependencies:** `watchdog`, `pathlib`, stdlib `json`; calls the `pipeline_callback` injected at construction (no direct import of other ingestion modules).
+**Dependencies:** `pathlib`, stdlib `json`; calls the `pipeline_callback` injected at construction (no direct import of other ingestion modules). `watchdog` is only required for the observer-based path.
 
-**Production note:** Replace with a GCS Eventarc trigger for cloud deployments — this watcher is not fault-tolerant across host restarts.
+**Production note:** For deployments requiring sub-minute ingestion latency, replace the scheduled scan with a GCS Eventarc trigger (Cloud Functions).
 
 ---
 

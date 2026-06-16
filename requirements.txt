@@ -57,10 +57,11 @@ python-dotenv>=1.0.1
 # Loading .env file into environment variables
 
 # ---------------------------------------------------------------------------
-# Filesystem Watching
+# Filesystem Watching (optional)
 # ---------------------------------------------------------------------------
 watchdog>=4.0.1
-# Directory monitoring for corpus/ — triggers ingestion on new PDF
+# Observer-based continuous monitoring (CorpusWatcher.start()).
+# Not required for the primary one-time scan path (CorpusWatcher.catchup_scan()).
 
 # ---------------------------------------------------------------------------
 # CLI / Utilities

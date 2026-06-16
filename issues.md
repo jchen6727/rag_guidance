@@ -105,20 +105,22 @@ Run a metadata generation pilot on 10 diverse documents before finalizing the sc
 
 ---
 
-## #ALTERNATE — One-Time Corpus Scan vs. Continuous Watcher
+## #ALTERNATE — One-Time Corpus Scan (Chosen Primary Pattern)
 
-**Complexity: Low | Risk: Low | Effort estimate: < 1 day**
+**Complexity: Low | Risk: Low | Status: Decided**
 
-### The problem with the continuous watcher as a primary ingestion path
-`CorpusWatcher` + `PDFEventHandler` require a persistent process with a live `watchdog` `Observer`. In cloud or containerised deployments, this is an operational liability: the process must stay up, handle SIGTERM gracefully, and survive restarts without re-processing the entire corpus. The manifest mitigates double-ingestion but does not make the watcher fault-tolerant — events fired while the process is down are silently lost unless a catch-up scan runs on next startup.
+### Decision
+`CorpusWatcher.catchup_scan()` is the primary ingestion path. The continuous observer-based path (`CorpusWatcher.start()`) remains in the module for local development but is not used in production.
 
-### The alternate
-`CorpusWatcher.catchup_scan()` already implements the core logic: iterate `corpus/`, call `is_processed()` per file, run the pipeline for new files only, persist the manifest. Calling this once and exiting — without ever starting the `Observer` — is a fully functional ingestion path that:
+### Why the continuous watcher was not chosen
+`CorpusWatcher` + `PDFEventHandler` require a persistent process with a live `watchdog` `Observer`. In cloud or containerised deployments, this is an operational liability: the process must stay up, handle SIGTERM gracefully, and survive restarts without re-processing the entire corpus. Events fired while the process is down are silently lost unless a catch-up scan runs on next startup.
+
+### How catchup_scan() satisfies the requirement
+`CorpusWatcher.catchup_scan()` iterates `corpus/`, calls `is_processed()` per file, runs the pipeline for new files only, and persists the manifest. Calling this once and exiting — without starting the `Observer` — is a fully functional ingestion path that:
 - Requires no background threads or signal handling
 - Runs to completion and exits cleanly (suitable for CI steps, cron jobs, Kubernetes `Job`s)
 - Produces identical manifest state to the watcher path
 - Avoids `watchdog` inotify descriptor limits on systems with large directory trees
 
-### What requires human judgment
-- Whether the acceptable ingestion latency for new documents is seconds (watcher) or minutes-to-hours (scheduled scan). This is a product decision, not a technical one.
-- In production, the right default for most cloud deployments is almost certainly the scheduled scan triggered by a GCS Eventarc notification or a Cloud Scheduler job — not the local watcher.
+### Latency trade-off (informational)
+Files added between scheduled runs are not processed until the next invocation. For most document-corpus use cases this is acceptable. For sub-minute latency in production, a GCS Eventarc notification triggering a Cloud Scheduler job is the preferred architecture — not the local `watchdog` observer.

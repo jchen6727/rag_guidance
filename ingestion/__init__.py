@@ -1,6 +1,8 @@
 """
-Ingestion package — PDF watching, extraction, chunking, metadata generation,
-GCS upload, and Vertex AI Search indexing.
+Ingestion package — corpus scanning, PDF extraction, chunking, metadata
+generation, GCS upload, and Vertex AI Search indexing.
+
+Primary entry point: CorpusWatcher.catchup_scan() (via scripts/batch_ingest.py)
 
 Typical call order for a single document:
     extractor  -> ExtractedDocument
