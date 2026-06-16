@@ -12,6 +12,7 @@ GCS layout:
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
@@ -61,7 +62,13 @@ class GCSUploader:
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        raise NotImplementedError
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+        sha = hashlib.sha256()
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                sha.update(chunk)
+        return sha.hexdigest()
 
     def is_already_uploaded(self, doc_id: str) -> bool:
         """Return True if both the PDF and chunk JSONL objects exist in GCS.
@@ -76,7 +83,11 @@ class GCSUploader:
             True if both gs://<bucket>/pdfs/<doc_id>.pdf and
             gs://<bucket>/chunks/<doc_id>.jsonl exist.
         """
-        raise NotImplementedError
+        client = self._get_client()
+        bucket = client.bucket(self._bucket_name)
+        pdf_blob = bucket.blob(self._gcs_pdf_path(doc_id))
+        chunks_blob = bucket.blob(self._gcs_chunks_path(doc_id))
+        return pdf_blob.exists() and chunks_blob.exists()
 
     def upload_pdf(self, local_path: Path, doc_id: str) -> str:
         """Upload the raw PDF to GCS.
@@ -94,7 +105,20 @@ class GCSUploader:
         Raises:
             google.cloud.exceptions.GoogleCloudError: On upload failure.
         """
-        raise NotImplementedError
+        object_path = self._gcs_pdf_path(doc_id)
+        gcs_uri = f"gs://{self._bucket_name}/{object_path}"
+
+        client = self._get_client()
+        bucket = client.bucket(self._bucket_name)
+        blob = bucket.blob(object_path)
+
+        if blob.exists():
+            logger.info("PDF already uploaded: %s", gcs_uri)
+            return gcs_uri
+
+        logger.info("Uploading PDF: %s -> %s", local_path.name, gcs_uri)
+        blob.upload_from_filename(str(local_path), content_type="application/pdf")
+        return gcs_uri
 
     def upload_chunks(self, chunks: list[Chunk], doc_id: str) -> str:
         """Serialize chunks to JSONL and upload to GCS.
@@ -112,7 +136,25 @@ class GCSUploader:
         Raises:
             ValueError: If any chunk is missing .metadata (not yet generated).
         """
-        raise NotImplementedError
+        lines: list[str] = []
+        for chunk in chunks:
+            if chunk.metadata is None:
+                raise ValueError(
+                    f"Chunk {chunk.chunk_id} has no metadata — run MetadataGenerator first"
+                )
+            lines.append(json.dumps(self._serialize_chunk(chunk)))
+
+        jsonl_bytes = "\n".join(lines).encode("utf-8")
+        object_path = self._gcs_chunks_path(doc_id)
+        gcs_uri = f"gs://{self._bucket_name}/{object_path}"
+
+        client = self._get_client()
+        bucket = client.bucket(self._bucket_name)
+        blob = bucket.blob(object_path)
+
+        logger.info("Uploading %d chunks -> %s", len(chunks), gcs_uri)
+        blob.upload_from_string(jsonl_bytes, content_type="application/jsonl")
+        return gcs_uri
 
     def _serialize_chunk(self, chunk: Chunk) -> dict:
         """Serialize a Chunk to the Vertex AI Search import JSON format.
@@ -121,8 +163,7 @@ class GCSUploader:
         Key fields:
             id: chunk_id (used as the DataStore document ID)
             structData: all ChunkMetadata fields as a flat dict
-            content: {"mimeType": "text/plain", "uri": ""}
-            jsonData: chunk text
+            content: {"mimeType": "text/plain", "rawBytes": <base64 encoded text>}
 
         Args:
             chunk: Chunk with populated metadata.
@@ -133,7 +174,21 @@ class GCSUploader:
         Raises:
             ValueError: If chunk.metadata is None.
         """
-        raise NotImplementedError
+        if chunk.metadata is None:
+            raise ValueError(f"Chunk {chunk.chunk_id} has no metadata")
+
+        struct_data = chunk.metadata.model_dump()
+        # Encode chunk text as base64 for the content field
+        raw_bytes = base64.b64encode(chunk.text.encode("utf-8")).decode("ascii")
+
+        return {
+            "id": chunk.chunk_id,
+            "structData": struct_data,
+            "content": {
+                "mimeType": "text/plain",
+                "rawBytes": raw_bytes,
+            },
+        }
 
     def _gcs_pdf_path(self, doc_id: str) -> str:
         """Return the GCS object path (without gs://bucket/ prefix) for the PDF.
@@ -163,4 +218,6 @@ class GCSUploader:
         Returns:
             Authenticated storage.Client instance.
         """
-        raise NotImplementedError
+        if self._client is None:
+            self._client = storage.Client(project=self._project_id)
+        return self._client

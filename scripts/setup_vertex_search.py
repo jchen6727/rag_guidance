@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -48,18 +49,47 @@ def create_datastore(dry_run: bool = False) -> str:
     Raises:
         google.api_core.exceptions.GoogleAPIError: On API failure.
     """
-    raise NotImplementedError
+    parent = (
+        f"projects/{settings.gcp_project_id}/locations/{settings.gcp_location}"
+        f"/collections/default_collection"
+    )
+    datastore_name = f"{parent}/dataStores/{settings.vertex_search_datastore_id}"
+
+    if dry_run:
+        logger.info(
+            "[DRY RUN] Would create DataStore: %s", settings.vertex_search_datastore_id
+        )
+        return datastore_name
+
+    client = discoveryengine.DataStoreServiceClient()
+
+    datastore = discoveryengine.DataStore(
+        display_name=settings.vertex_search_datastore_id,
+        industry_vertical=discoveryengine.IndustryVertical.GENERIC,
+        content_config=discoveryengine.DataStore.ContentConfig.CONTENT_REQUIRED,
+        solution_types=[discoveryengine.SolutionType.SOLUTION_TYPE_SEARCH],
+    )
+
+    try:
+        operation = client.create_data_store(
+            parent=parent,
+            data_store=datastore,
+            data_store_id=settings.vertex_search_datastore_id,
+        )
+        result = operation.result(timeout=120)
+        logger.info("DataStore created: %s", result.name)
+        return result.name
+    except AlreadyExists:
+        logger.info("DataStore already exists: %s", datastore_name)
+        return datastore_name
 
 
 def register_schema(datastore_name: str, dry_run: bool = False) -> None:
     """Update the DataStore schema to register ChunkMetadata fields as filterable.
 
-    Loads config/metadata_schema.json and converts each property into a
-    FieldConfig with FILTERABLE and SEARCHABLE attributes.
-
-    String enum fields (domain, doc_type) are registered with EXACT_SEARCH
-    indexing mode. Integer fields (page_start, year_published) are registered
-    with RANGE indexing mode.
+    Loads config/metadata_schema.json and submits it as the DataStore schema.
+    String enum fields (domain, doc_type) are registered with FILTERABLE indexing.
+    Integer fields (page_start, year_published) are registered with RANGE indexing.
 
     Must be called BEFORE the first ImportDocuments run. Calling this after
     ingestion does not retroactively index existing documents.
@@ -71,7 +101,57 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
     Raises:
         FileNotFoundError: If config/metadata_schema.json does not exist.
     """
-    raise NotImplementedError
+    schema_data = _load_metadata_schema()
+
+    if dry_run:
+        logger.info(
+            "[DRY RUN] Would register schema with %d field(s)",
+            len(schema_data.get("properties", {})),
+        )
+        return
+
+    client = discoveryengine.SchemaServiceClient()
+    schema_name = f"{datastore_name}/schemas/default_schema"
+
+    # Build field configs from metadata_schema.json properties
+    field_configs: dict[str, discoveryengine.FieldConfig] = {}
+    int_fields = {"page_start", "page_end", "chunk_index", "year_published"}
+    array_fields = {"keywords", "entities"}
+
+    for field_name, field_def in schema_data.get("properties", {}).items():
+        if field_name in array_fields:
+            # Array fields are stored but not individually filterable
+            continue
+        config = discoveryengine.FieldConfig(
+            filterable=discoveryengine.FieldConfig.FilterableOption.FILTERABLE_ENABLED,
+            retrievable=discoveryengine.FieldConfig.RetrievableOption.RETRIEVABLE_ENABLED,
+            searchable=discoveryengine.FieldConfig.SearchableOption.SEARCHABLE_ENABLED,
+        )
+        if field_name in int_fields:
+            config.field_type = discoveryengine.FieldConfig.FieldType.INTEGER
+        else:
+            config.field_type = discoveryengine.FieldConfig.FieldType.TEXT
+        field_configs[field_name] = config
+
+    schema = discoveryengine.Schema(
+        name=schema_name,
+        json_schema=json.dumps(schema_data),
+        field_configs=field_configs,
+    )
+
+    try:
+        client.update_schema(schema=schema)
+        logger.info("Schema updated: %s", schema_name)
+    except Exception:
+        try:
+            client.create_schema(
+                parent=datastore_name,
+                schema=schema,
+                schema_id="default_schema",
+            )
+            logger.info("Schema created: %s", schema_name)
+        except AlreadyExists:
+            logger.info("Schema already exists, no changes made: %s", schema_name)
 
 
 def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
@@ -89,7 +169,42 @@ def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
     Returns:
         Full Search Engine resource name string.
     """
-    raise NotImplementedError
+    parent = (
+        f"projects/{settings.gcp_project_id}/locations/{settings.gcp_location}"
+        f"/collections/default_collection"
+    )
+    engine_name = f"{parent}/engines/{settings.vertex_search_engine_id}"
+
+    if dry_run:
+        logger.info(
+            "[DRY RUN] Would create Search Engine: %s", settings.vertex_search_engine_id
+        )
+        return engine_name
+
+    client = discoveryengine.EngineServiceClient()
+
+    engine = discoveryengine.Engine(
+        display_name=settings.vertex_search_engine_id,
+        industry_vertical=discoveryengine.IndustryVertical.GENERIC,
+        solution_type=discoveryengine.SolutionType.SOLUTION_TYPE_SEARCH,
+        data_store_ids=[settings.vertex_search_datastore_id],
+        search_engine_config=discoveryengine.Engine.SearchEngineConfig(
+            search_tier=discoveryengine.SearchTier.SEARCH_TIER_STANDARD,
+        ),
+    )
+
+    try:
+        operation = client.create_engine(
+            parent=parent,
+            engine=engine,
+            engine_id=settings.vertex_search_engine_id,
+        )
+        result = operation.result(timeout=120)
+        logger.info("Search Engine created: %s", result.name)
+        return result.name
+    except AlreadyExists:
+        logger.info("Search Engine already exists: %s", engine_name)
+        return engine_name
 
 
 def _load_metadata_schema() -> dict:
@@ -101,7 +216,11 @@ def _load_metadata_schema() -> dict:
     Raises:
         FileNotFoundError: If the schema file is missing.
     """
-    raise NotImplementedError
+    schema_path = settings.metadata_schema_path
+    if not schema_path.exists():
+        raise FileNotFoundError(f"Metadata schema not found: {schema_path}")
+    with open(schema_path) as f:
+        return json.load(f)
 
 
 def main() -> None:

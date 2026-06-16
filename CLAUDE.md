@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-**All source files are intentional stubs.** Every method body is `raise NotImplementedError`. The scaffolding, type signatures, docstrings, and config files are complete and authoritative — implementation has not started. Do not treat stub bodies as bugs.
+**Many source files are intentional stubs.** Every method body is `raise NotImplementedError`. The scaffolding, type signatures, docstrings, and config files are complete and authoritative — implementation has not started. Do not treat stub bodies as bugs.
 
 ## Commands
 
-**Install dependencies** (Python 3.11+ required):
+**Install dependencies** (Python 3.12+ required; rollback floor is 3.11):
 ```bash
 pip install -r requirements.txt
 # CPU-only pytorch (avoids large GPU download):
