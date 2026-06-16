@@ -5,8 +5,11 @@
 ## 2026-06-16
 
 ### Changed
+`watcher` -> `scanner` nomenclature (i.e. `CorpusWatcher` -> `CorpusScanner`) change updated to reflect this. `CorpusScanner().scan()`  (via `scripts/batch_ingest.py`) is the canonical ingestion path. Modified files to reinforce decision.
 
-- **Primary ingestion pattern is now one-time corpus scan.** `CorpusWatcher.catchup_scan()` (via `scripts/batch_ingest.py`) replaces the continuous `watchdog` observer as the canonical ingestion path. The observer-based path (`CorpusWatcher.start()`) remains in the module for local development but is no longer the default.
+### Changed
+
+- **Primary ingestion pattern is now one-time corpus scan.** `CorpusWatcher` -> `CorpusScanner`  (via `scripts/batch_ingest.py`) replaces the continuous `watchdog` observer as the canonical ingestion path. The observer-based path (`CorpusWatcher.start()`) remains in the module for local development but is no longer the default.
 
 ### Documentation updates
 

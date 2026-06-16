@@ -102,25 +102,23 @@ Run a metadata generation pilot on 10 diverse documents before finalizing the sc
 ### What requires human judgment
 - Acceptable re-ingestion window (how long can a document be unavailable during an update?).
 - Whether to maintain a shadow DataStore for zero-downtime schema migrations.
+- #TODO, manual review per scheduled corpus changes mean that any corpus scanned will go through a human analysis before public dissemination, which will be a one time migration of all data to live server during a "server maintenance" period.
 
 ---
 
-## #ALTERNATE — One-Time Corpus Scan (Chosen Primary Pattern)
+## One-Time Corpus Scan Chosen Primary Pattern)
 
 **Complexity: Low | Risk: Low | Status: Decided**
 
 ### Decision
-`CorpusWatcher.catchup_scan()` is the primary ingestion path. The continuous observer-based path (`CorpusWatcher.start()`) remains in the module for local development but is not used in production.
-
-### Why the continuous watcher was not chosen
-`CorpusWatcher` + `PDFEventHandler` require a persistent process with a live `watchdog` `Observer`. In cloud or containerised deployments, this is an operational liability: the process must stay up, handle SIGTERM gracefully, and survive restarts without re-processing the entire corpus. Events fired while the process is down are silently lost unless a catch-up scan runs on next startup.
+`CorpusScanner.scan()` is the primary ingestion path. The continuous observer-based path (`CorpusWatcher.start()`) remains in the module for local development but is not used in production.
 
 ### How catchup_scan() satisfies the requirement
-`CorpusWatcher.catchup_scan()` iterates `corpus/`, calls `is_processed()` per file, runs the pipeline for new files only, and persists the manifest. Calling this once and exiting — without starting the `Observer` — is a fully functional ingestion path that:
+`CorpusScanner.scan()` iterates `corpus/`, calls `is_processed()` per file, runs the pipeline for new files only, and persists the manifest. Calling this once and exiting - is a fully functional ingestion path that:
 - Requires no background threads or signal handling
 - Runs to completion and exits cleanly (suitable for CI steps, cron jobs, Kubernetes `Job`s)
 - Produces identical manifest state to the watcher path
 - Avoids `watchdog` inotify descriptor limits on systems with large directory trees
 
 ### Latency trade-off (informational)
-Files added between scheduled runs are not processed until the next invocation. For most document-corpus use cases this is acceptable. For sub-minute latency in production, a GCS Eventarc notification triggering a Cloud Scheduler job is the preferred architecture — not the local `watchdog` observer.
+Files added between scheduled runs are not processed until the next invocation. For most document-corpus use cases this is acceptable. For sub-minute latency in production, a GCS Eventarc notification triggering a Cloud Scheduler job is the preferred architecture

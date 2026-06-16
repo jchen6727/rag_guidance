@@ -10,7 +10,7 @@ End-to-end pipeline for extracting, chunking, annotating, and indexing PDF docum
 corpus/ PDF
     │
     ▼
-batch_ingest.py     CorpusWatcher.catchup_scan() finds unprocessed PDFs
+batch_ingest.py     CorpusScanner.scan() finds unprocessed PDFs
     │  pipeline_callback(path)
     ▼
 extractor.py        PDFExtractor.extract(path) → ExtractedDocument
@@ -45,7 +45,7 @@ Exports the six public classes in call order: `CorpusWatcher`, `PDFExtractor`, `
 
 ---
 
-### `watcher.py`
+### `scanner.py`
 
 **Purpose:** Scan `corpus/` for new PDFs and dispatch them through the ingestion pipeline.
 
@@ -53,22 +53,15 @@ Exports the six public classes in call order: `CorpusWatcher`, `PDFExtractor`, `
 
 | Class | Role |
 |---|---|
-| `CorpusWatcher` | Owns the manifest and scan logic; `catchup_scan()` is the primary entry point |
-| `PDFEventHandler` | Watchdog `FileSystemEventHandler` subclass; only needed for the observer-based continuous path |
+| `CorpusScanner` | Owns the manifest and scan logic; `scan()` is the primary entry point |
 
 **Manifest:** A JSON file (`basename → doc_id`) that persists across runs so already-processed files are skipped. Written atomically (temp-file + rename) on every update.
 
 **Primary usage (one-time scan):**
 1. `_load_manifest()` — reads or creates the manifest file
-2. `catchup_scan()` — scans `corpus/`, processes unprocessed PDFs alphabetically, returns
+2. `scan()` — scans `corpus/`, processes unprocessed PDFs alphabetically, returns
 
-**Observer-based usage (optional, continuous):**
-1. `_load_manifest()` — reads or creates the manifest file
-2. `catchup_scan()` — catch-up pass for files added while the observer was down
-3. Starts the watchdog `Observer` on `corpus/`
-4. Blocks; `stop()` can be called from a signal handler
-
-**Dependencies:** `pathlib`, stdlib `json`; calls the `pipeline_callback` injected at construction (no direct import of other ingestion modules). `watchdog` is only required for the observer-based path.
+**Dependencies:** `pathlib`, stdlib `json`; calls the `pipeline_callback` injected at construction (no direct import of other ingestion modules). 
 
 **Production note:** For deployments requiring sub-minute ingestion latency, replace the scheduled scan with a GCS Eventarc trigger (Cloud Functions).
 

@@ -2,16 +2,11 @@
 Corpus scanning and optional filesystem watching for the corpus/ directory.
 
 Primary usage — one-time scan (no daemon):
-    watcher = CorpusWatcher(corpus_dir, manifest_path, pipeline_fn)
-    watcher.catchup_scan()   # single pass over corpus/; returns when done
+    scanner = CorpusScanner(corpus_dir, manifest_path, pipeline_fn)
+    scanner.scan()   # single pass over corpus/; returns when done
 
-This is the intended deployment pattern: run as a batch job, CI step, or
-cron-scheduled container. No background threads, no signal handling, no watchdog
-Observer required. ``scripts/batch_ingest.py`` uses this path.
-
-Optional — continuous observer (local development only):
-    watcher = CorpusWatcher(corpus_dir, manifest_path, pipeline_fn)
-    watcher.start()   # blocks; call stop() from a signal handler to exit
+During deployment: ``scripts/batch_ingest.py`` uses this path., Intended to run 
+as a batch job, CI step, or cron-scheduled container. 
 
 Tracks processed files in a JSON manifest (basename → doc_id) so re-runs
 process only new files. The manifest is written atomically on every update.
@@ -29,17 +24,14 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-class CorpusWatcher:
+class CorpusScanner:
     """
     Orchestrates corpus scanning and coordinates per-document ingestion.
 
     Primary lifecycle (one-time scan):
-        watcher = CorpusWatcher(corpus_dir, manifest_path, pipeline_fn)
-        watcher.catchup_scan()   # processes all unprocessed PDFs, then returns
+        scanner = CorpusScanner(corpus_dir, manifest_path, pipeline_fn)
+        scanner.scan()   # processes all unprocessed PDFs, then returns
 
-    Observer lifecycle (optional, for continuous local monitoring):
-        watcher = CorpusWatcher(corpus_dir, manifest_path, pipeline_fn)
-        watcher.start()   # blocks; call stop() from another thread to exit
     """
 
     def __init__(
@@ -50,7 +42,7 @@ class CorpusWatcher:
     ) -> None:
         """
         Args:
-            corpus_dir: Directory to watch. Must exist before calling start().
+            corpus_dir: Directory to scan. Must exist before calling start().
             manifest_path: Path to the JSON manifest (created if absent).
             pipeline_callback: Called with the PDF path to run the full ingestion
                                pipeline (extract → chunk → metadata → upload → index).
@@ -61,20 +53,7 @@ class CorpusWatcher:
         self._observer: Observer | None = None
         self._manifest: dict[str, str] = {}  # basename -> doc_id
 
-    def start(self) -> None:
-        """Load the manifest, run catch-up scan, start the observer, then block.
-
-        Observer-based path for continuous local monitoring. Prefer catchup_scan()
-        for batch jobs, CI, and scheduled runs. Call stop() from a signal handler
-        or separate thread to exit cleanly.
-        """
-        raise NotImplementedError
-
-    def stop(self) -> None:
-        """Stop the watchdog observer and flush the manifest to disk."""
-        raise NotImplementedError
-
-    def catchup_scan(self) -> None:
+    def scan(self) -> None:
         """Process any PDFs in corpus_dir not yet recorded in the manifest.
 
         Primary ingestion entry point. Scans corpus_dir once, runs the pipeline

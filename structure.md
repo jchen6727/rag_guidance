@@ -9,10 +9,10 @@ An end-to-end pipeline that ingests technical/clinical/scientific PDFs, generate
 ## Data Flow
 
 ```
-/corpus (scanned dir)
+/corpus (flat dir to scan)
       │
       ▼
-[1. CorpusWatcher.catchup_scan()] ─────────────────────────
+[1. CorpusScanner.scan()] ─────────────────────────
       │ via scripts/batch_ingest.py — new PDF found via manifest check
       ▼
 [2. PDF Extractor] (text, tables, page layout)
@@ -50,7 +50,7 @@ rag_guidance/
 │
 ├── ingestion/
 │   ├── __init__.py
-│   ├── watcher.py                  # Corpus scanner; CorpusWatcher.catchup_scan() is the primary entry point
+│   ├── scanner.py                  # Corpus scanner; CorpusScanner.scan() is the primary entry point
 │   ├── extractor.py                # PDF text + structure extraction
 │   ├── chunker.py                  # Context-aware chunking logic
 │   ├── metadata_gen.py             # Gemini metadata generation
@@ -96,10 +96,8 @@ rag_guidance/
 
 ## Component Descriptions
 
-### 1. Corpus Scanner (`ingestion/watcher.py`)
-`CorpusWatcher.catchup_scan()` scans `corpus/` for new PDFs, checks each against the manifest via `is_processed()`, runs the pipeline for unprocessed files in alphabetical order, and returns. Manifest is written atomically after each file. No daemon, no background thread. `scripts/batch_ingest.py` is the entry point.
-
-The module also contains a watchdog `Observer`-based path (`CorpusWatcher.start()`) for continuous monitoring in local development. This is not the primary deployment pattern — in production, prefer a cron-scheduled container or a GCS Eventarc trigger.
+### 1. Corpus Scanner (`ingestion/scanner.py`)
+`CorpusScanner.scan()` scans `corpus/` for new PDFs, checks each against the manifest via `is_processed()`, runs the pipeline for unprocessed files in alphabetical order, and returns. Manifest is written atomically after each file. Cron-scheduled container or a GCS Eventarc trigger. No daemon, no background thread. `scripts/batch_ingest.py` is the entry point.
 
 ### 2. PDF Extractor (`ingestion/extractor.py`)
 Extracts text preserving page boundaries, section headers, and table structure. Primary: `pdfplumber` (layout-aware). Fallback: Google Document AI for scanned/complex layouts.

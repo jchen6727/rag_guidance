@@ -48,12 +48,12 @@ PYTHONPATH=. python scripts/purge_datastore.py --confirm
 
 ### Two Distinct Pipelines
 
-**Ingest path** (triggered by `scripts/batch_ingest.py` via `CorpusWatcher.catchup_scan()`):
+**Ingest path** (triggered by `scripts/batch_ingest.py` via `CorpusScanner.scan()`):
 ```
 corpus/ PDF → extractor → chunker → metadata_gen → uploader (GCS) → indexer (Vertex AI Search)
 ```
 
-Ingestion is a one-time corpus scan: `CorpusWatcher.catchup_scan()` does a single pass over `corpus/`, checks each PDF against the manifest via `is_processed()`, and processes only new files. No watchdog daemon, no blocking observer, no signal handling. The continuous `Observer`-based path (`CorpusWatcher.start()`) exists in the module but is not the intended deployment pattern.
+Ingestion is a one-time corpus scan: `CorpusScanner.scan()` does a single pass over `corpus/`, checks each PDF against the manifest via `is_processed()`, and processes only new files. No watchdog daemon, no blocking observer, no signal handling.
 
 **Query path** (no entry point exists yet — see Known Issues):
 ```
