@@ -15,6 +15,8 @@ pip install -r requirements.txt
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
 
+`ingestion/requirements.txt` is a scoped subset covering only the ingestion pipeline's direct dependencies (no `google-cloud-aiplatform`, pytest, etc.) — use it when working on the ingestion module in isolation.
+
 **There is no `pyproject.toml`.** All imports are absolute from the project root. Prefix every command with `PYTHONPATH=.`:
 ```bash
 PYTHONPATH=. pytest tests/
@@ -77,7 +79,9 @@ The `Chunk.chunk_id` canonical form is `"{doc_id}_{chunk_index:05d}"`. This ID i
 
 ### Chunking Strategy (`ingestion/chunker.py`)
 
-Two-pass approach — structural split first (section headers via regex), then semantic sub-split within sections (sentence-transformer cosine similarity, threshold from `ChunkerConfig.semantic_similarity_threshold`). The embedding model is lazy-loaded on first call. See `issues.md P1` for the full trade-off discussion — chunking quality gates all downstream retrieval.
+Two-pass approach — structural split first (section headers via regex), then semantic sub-split within sections (sentence-transformer cosine similarity, threshold from `ChunkerConfig.semantic_similarity_threshold`). The embedding model is lazy-loaded on first call. Chunking quality gates all downstream retrieval.
+
+`ChunkerConfig` has Python defaults and is not yet loaded from `config/chunk_config.yaml` (Known Issue #1), but `pyyaml` is already a dependency — no new packages needed to implement `ChunkerConfig.from_yaml()`.
 
 ### Metadata Generation (`ingestion/metadata_gen.py`)
 
@@ -113,6 +117,6 @@ These are confirmed defects in the scaffolding that must be resolved:
 
 The DataStore schema **must be registered before the first import**. Chunks indexed before schema registration silently drop unregistered metadata fields. Changing `metadata_schema.json` after ingestion requires `purge_datastore.py --confirm` followed by full re-ingestion.
 
-## Session Notes
+## Out of Scope
 
-`journal/` is git-ignored. Per-session notes including the project autopsy (architecture decisions, known defects, prompt improvement recommendations) are stored at `journal/notes_6_8/autopsy.md`.
+`journal/` is git-ignored personal session notes. Do not read, reference, or treat its contents as authoritative project documentation.

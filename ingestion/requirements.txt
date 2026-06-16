@@ -55,10 +55,3 @@ pyyaml>=6.0.1
 
 python-dotenv>=1.0.1
 # config/settings.py reads .env at startup
-
-# ---------------------------------------------------------------------------
-# Filesystem Watching (watcher.py)
-# ---------------------------------------------------------------------------
-watchdog>=4.0.1
-# CorpusWatcher / PDFEventHandler — continuous corpus/ monitoring
-# Not needed if using the #ALTERNATE one-time scan path (catchup_scan only)

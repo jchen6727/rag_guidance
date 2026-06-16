@@ -49,25 +49,6 @@ Exports the six public classes in call order: `CorpusWatcher`, `PDFExtractor`, `
 
 **Purpose:** Monitor `corpus/` for new PDFs and dispatch them through the ingestion pipeline.
 
-> **#ALTERNATE — One-time corpus scan (no watchdog)**
->
-> Instead of starting a long-lived `Observer`, call `CorpusWatcher.catchup_scan()` directly and then exit. This performs a single pass over `corpus/`, calls `is_processed()` against the manifest for each PDF, and invokes the `pipeline_callback` only for files not yet recorded. No background thread, no `PDFEventHandler`, no signal handling required.
->
-> ```python
-> watcher = CorpusWatcher(corpus_dir, manifest_path, pipeline_fn)
-> watcher._load_manifest()   # load existing state
-> watcher.catchup_scan()     # process new files, update manifest
-> # exit — no observer started
-> ```
->
-> This pattern is preferable for:
-> - **CI/CD pipelines** — run ingestion as a one-shot job step, not a daemon
-> - **Scheduled cron jobs** — trigger a scan on a timer rather than maintaining a persistent process
-> - **Container deployments** — ephemeral containers where a blocking observer would prevent clean shutdown
-> - **Environments where `watchdog` inotify limits are a concern** (each watched directory consumes a kernel inotify watch)
->
-> The trade-off is latency: files added between scheduled runs are not processed until the next invocation, whereas the continuous watcher reacts within seconds. `scripts/batch_ingest.py` is the existing entry point that uses this pattern.
-
 **Key classes:**
 
 | Class | Role |

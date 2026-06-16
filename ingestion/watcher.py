@@ -16,58 +16,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from watchdog.events import FileCreatedEvent, FileModifiedEvent, FileSystemEventHandler
-from watchdog.observers import Observer
-
 logger = logging.getLogger(__name__)
-
-
-class PDFEventHandler(FileSystemEventHandler):
-    """Watchdog handler that filters for PDF files and invokes an ingestion callback."""
-
-    def __init__(self, on_pdf: Callable[[Path], None]) -> None:
-        """
-        Args:
-            on_pdf: Callback called with the absolute PDF path when a new file lands.
-                    This is called on the watchdog observer thread — keep it fast or
-                    hand off to a queue.
-        """
-        super().__init__()
-        self._on_pdf = on_pdf
-
-    def on_created(self, event: FileCreatedEvent) -> None:
-        """Triggered when a file is created inside the watched directory tree.
-
-        Ignores directories and non-PDF files.
-
-        Args:
-            event: Watchdog FileCreatedEvent with .src_path set to the new file.
-        """
-        raise NotImplementedError
-
-    def on_modified(self, event: FileModifiedEvent) -> None:
-        """Triggered when a file is modified inside the watched directory tree.
-
-        Large PDFs copied via OS utilities fire multiple modification events.
-        Debounce logic (e.g., check file size stability) should live here before
-        forwarding to on_pdf.
-
-        Args:
-            event: Watchdog FileModifiedEvent.
-        """
-        raise NotImplementedError
-
-    def _is_pdf(self, path: str) -> bool:
-        """Return True if path ends with .pdf (case-insensitive).
-
-        Args:
-            path: Raw filesystem path string from the watchdog event.
-
-        Returns:
-            True if the file extension is .pdf.
-        """
-        raise NotImplementedError
-
 
 class CorpusWatcher:
     """
