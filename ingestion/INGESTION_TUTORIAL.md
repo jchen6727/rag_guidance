@@ -50,7 +50,9 @@ GEMINI_API_KEY=                  # leave blank to use ADC
 Load the variables into your shell:
 
 ```bash
+set -a
 source .env  # or: export $(grep -v '^#' .env | xargs)
+set +a
 ```
 
 ---
