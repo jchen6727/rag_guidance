@@ -118,6 +118,17 @@ Examples:
 - SAMHSA TIP 50 — Addressing Suicidal Thoughts and Behaviors in Substance Abuse Treatment
 - Simon & Shuman (eds.), *Clinical Manual of Psychiatry and Law* — documentation standards
 
+# RECOMMENDED CHANGE
+**Termination planning — currently absent from Tier 1 as a named function**
+Termination is a major clinical event with its own post-session analysis demands: reviewing progress against treatment goals, managing termination-related affect (dependency, abandonment, grief), and producing a formal termination summary. This is distinct from `prognosis_trajectory` (expected illness course) and `treatment_plan_revision` (ongoing treatment). The ASA system lacks both a dedicated corpus section and a named `analysis_function` value for it (see schema recommendations below).
+
+Recommended additions to Tier 1:
+- Egan, *Termination of Psychotherapy: The Crucial Last Chapter in Psychotherapy Treatment* (Routledge)
+- Marx & Gelso (1987), "Termination of individual counseling in a university counseling center" — foundational research on planned termination
+- Quintana (1993), "Toward an expanded and updated conceptualization of termination" — conceptual framework
+- Norcross, Zimmerman, Greenberg & Swift (2017), "Do all therapists do that when saying goodbye?" — empirical study on termination practices
+# END RECOMMENDED CHANGE
+
 ### Tier 2 — Supplementary (Moderate analytical value)
 
 **Stepped care, level-of-care, and referral frameworks**
@@ -162,6 +173,19 @@ Examples:
 - APA Guidelines on Multicultural Education, Training, Research, Practice, and Organizational Change
 - Balsam et al. — LGBTQ-affirmative psychotherapy frameworks
 - Bryant-Davis — trauma treatment with Black clients
+
+# RECOMMENDED CHANGE
+**Cultural Formulation Interview materials — currently absent**
+The DSM-5 Cultural Formulation Interview (CFI) and its supplementary modules are validated, freely available structured tools for conducting cultural formulation in intake and ongoing treatment. These are directly relevant to post-session case formulation updates when the session surfaced cultural factors.
+
+Recommended additions:
+- Lewis-Fernández et al., *DSM-5 Handbook on the Cultural Formulation Interview* (APA)
+- Aggarwal et al. (2016), "Using the Cultural Formulation Interview to build culturally sensitive services" — implementation guide for clinicians
+
+Tag: `analysis_function: ["case_formulation_update"]`, `corpus_scope: asa_only`
+
+**Note on LGBTQ+ materials:** These texts are currently ASA-only. The same materials should also be present in the RTA corpus at Tier 2, since cultural misattunements and minority stress disclosures are in-session events requiring real-time guidance.
+# END RECOMMENDED CHANGE
 
 **Medication coordination and prescriber communication**
 When a patient is receiving concurrent pharmacotherapy, the ASA system may need to flag potential drug-therapy interactions, help the therapist formulate a communication to the prescribing psychiatrist, or provide context for the patient's medication-related concerns raised in session. This is not prescribing guidance — it is coordination-of-care knowledge.
@@ -341,6 +365,15 @@ prognosis_trajectory     (expected course-of-illness, relapse risk, maintenance 
 supervision_preparation  (framing the session for supervisor review)
 ```
 
+# RECOMMENDED CHANGE
+The `analysis_function` enum is missing a value for termination planning. The termination phase generates a distinct post-session analysis task that is not covered by `prognosis_trajectory` (expected illness course) or `treatment_plan_revision` (assumes ongoing treatment): reviewing client progress against stated goals, managing termination-related affect, and producing a formal termination summary.
+
+```
+termination_planning     (reviewing treatment progress, managing ending-phase affect, producing
+                          termination summary, planning for maintenance and relapse prevention)
+```
+# END RECOMMENDED CHANGE
+
 **`evidence_base`** (string, controlled vocabulary)
 Characterizes the type of evidence the chunk represents. Distinct from `practice_recommendation_level` (which rates strength of recommendation) — this field rates the epistemological type of the source.
 
@@ -389,6 +422,15 @@ treatment_course         (full treatment arc; sequencing, format, phasing decisi
 post_termination         (maintenance, relapse prevention, booster sessions)
 any
 ```
+
+# RECOMMENDED CHANGE
+The `time_horizon` enum implicitly assumes time-limited treatment. Many clients are in open-ended therapy (psychodynamic, relational, long-term supportive) where `treatment_course` does not accurately describe a case that has been ongoing for two or three years with no defined endpoint.
+
+```
+open_ended               (no defined treatment arc or termination target; applies to long-term
+                          dynamic, relational, or supportive therapy contexts)
+```
+# END RECOMMENDED CHANGE
 
 **`outcome_measure_tags`** (array of strings, controlled vocabulary)
 For chunks containing data from or about specific outcome instruments. Allows the outcome monitoring analysis function to retrieve interpretation guidance for the specific instrument in use.
@@ -491,3 +533,9 @@ progress_note_template   (clinical documentation guide or note template)
 6. **The `practice_recommendation_level` field needs `empirically_derived` added to its enum** before ASA schema registration. RCT-sourced chunks cannot accurately be tagged as `strongly_recommended` (a guideline designation) or `expert_consensus` (a non-empirical designation) — `empirically_derived` captures findings that are data-supported but not yet synthesized into a clinical practice recommendation.
 
 7. **ASA Gemini extraction prompts require separate prompt design from RTA.** The RTA extraction prompt asks Gemini to identify session events and clinical techniques in a chunk. The ASA extraction prompt must additionally elicit `evidence_base`, `patient_population`, `analysis_function`, and `time_horizon`. These require Gemini to reason about the epistemological type of the source (is this from an RCT? What population?), which benefits from including the document's abstract or first few pages as context alongside the chunk.
+
+# RECOMMENDED CHANGE
+8. **Risk monitoring in the ASA pipeline should not rely solely on `risk_documentation` as an `analysis_function`.** That value covers acute post-session risk documentation (safety plan updates, duty-to-warn reasoning). It does not cover the clinician's ongoing background task of tracking chronic suicide ideation, NSSI patterns, or relapse risk trajectories across sessions. The ASA system should run a second retrieval pass keyed on `risk_dimension_tags` (proposed in CORPUS_NOTES_RTA.md) for every session — not only those flagged with acute risk events — to surface trajectory-monitoring guidance as a lower-priority output alongside the primary session analysis.
+
+9. **The `practice_recommendation_level` enum (inherited from RTA) needs negative polarity values in the ASA context as well.** Post-session analysis synthesizes RCT and meta-analytic evidence, which includes explicit "do not use" findings (e.g., "EMDR without prior stabilization worsened outcomes in this complex PTSD subgroup"). The existing enum has no way to represent this. Add `use_with_caution` and `contraindicated` consistent with the RTA recommendation.
+# END RECOMMENDED CHANGE

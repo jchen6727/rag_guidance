@@ -31,6 +31,38 @@ Examples:
 - Jobes, *Managing Suicidal Risk: A Collaborative Approach* (CAMS)
 - Miller & Rollnick, *Motivational Interviewing* (3rd ed., Guilford)
 
+# RECOMMENDED CHANGE
+**EMDR — currently absent despite Level 1 evidence status and widespread clinical use**
+EMDR holds WHO, APA, and ISTSS Level A evidence for PTSD and follows a structured eight-phase protocol with session-moment-level procedural guidance. The `therapeutic_modality` enum includes `EMDR` but no source texts appear in any tier. A therapist conducting EMDR will receive no modality-matched real-time guidance.
+
+Recommended additions to Tier 1:
+- Shapiro, *Eye Movement Desensitization and Reprocessing: Basic Principles, Protocols, and Procedures* (3rd ed., Guilford) — primary clinical manual
+- Leeds, *A Guide to the Standard EMDR Therapy Protocols for Clinicians, Supervisors, and Consultants*
+
+**Somatic and body-based trauma approaches — currently absent**
+`SE` and sensorimotor approaches have substantial uptake for trauma and complex PTSD. These are directly relevant to the `somatic_activation` session event (see session_event_tags recommendations below) and fill a real-time guidance gap for therapists working with freeze/collapse responses.
+
+Recommended additions to Tier 1:
+- Ogden, Minton & Pain, *Trauma and the Body: A Sensorimotor Approach to Psychotherapy* (Norton) — Sensorimotor Psychotherapy manual
+- Fisher, *Healing the Fragmented Selves of Trauma Survivors* — parts-based somatic work, relevant for dissociative presentations
+
+**IFS — currently absent despite `IFS` appearing in the therapeutic_modality enum**
+IFS is now an APA-validated evidence-based practice for depression and PTSD and is widely used. Without source texts, the modality tag is non-functional.
+
+Recommended additions to Tier 1:
+- Schwartz & Sweezy, *Internal Family Systems Therapy* (2nd ed., Guilford)
+- Anderson, Sweezy & Schwartz (eds.), *Internal Family Systems Skills Training Manual* (PESI)
+
+**Youth-specific therapy — currently underrepresented**
+Only Barkley's ADHD/behavior management text addresses pediatric/adolescent presentations. A therapist working with an adolescent experiencing depression, self-harm, OCD, or PTSD will retrieve inadequate modality-specific guidance.
+
+Recommended additions to Tier 1:
+- Rathus & Miller, *DBT Skills Manual for Adolescents* (Guilford) — clinician edition
+- Cohen, Mannarino & Deblinger, *Treating Trauma and Traumatic Grief in Children and Adolescents* (TF-CBT manual)
+- March & Mulle, *OCD in Children and Adolescents: A Cognitive-Behavioral Treatment Manual*
+- Beck, *Cognitive Behavior Therapy with Children and Adolescents* (Guilford)
+# END RECOMMENDED CHANGE
+
 **Deliberate practice and therapist-competency texts**
 Books explicitly structured around developing clinical skill — often include annotated session vignettes, supervisor commentary, and criteria for recognizing skill gaps. These index cleanly to session events.
 
@@ -118,9 +150,29 @@ Examples:
 - Falender & Shafranske, *Clinical Supervision: A Competency-Based Approach* (APA)
 - Watkins & Milne (eds.), *Wiley International Handbook of Clinical Supervision*
 
+# RECOMMENDED CHANGE
+**LGBTQ+-affirmative practice — currently absent from RTA corpus**
+These texts appear only in the ASA Tier 2 corpus, but minority stress disclosures, coming-out crises, and internalized homophobia/transphobia are in-session events that require real-time guidance — not only post-session reflection. Recommend promoting to RTA Tier 2 and adding `minority_stress_disclosure` to `session_event_tags` (see below).
+
+- Pachankis & Safren (eds.), *Handbook of Evidence-Based Mental Health Practice with Sexual and Gender Minorities* (Oxford)
+- Austin & Craig (eds.), *Transgender and Gender Nonconforming Psychotherapy*
+
+**Culturally responsive practice — currently absent from RTA corpus**
+Cultural misattunements occur in-session and require correction at the moment of the event, not only post-session reflection. A therapist misreading a client's indirect communication style as resistance, or whose direct confrontational approach violates the client's cultural norms, needs in-the-moment guidance. Recommend adding `cultural_mismatch` to `session_event_tags` (see below).
+
+- Hays, *Addressing Cultural Complexities in Counseling and Clinical Practice* (APA, 4th ed.)
+- Lewis-Fernández et al., *DSM-5 Handbook on the Cultural Formulation Interview* (APA)
+# END RECOMMENDED CHANGE
+
 ### Tier 3 — Selective inclusion (Narrow retrieval value; curate carefully)
 
 **Meta-analyses and systematic reviews** — Include *only* those that synthesize technique-level findings (e.g., "which specific DBT skills components most predict BPD outcomes") rather than aggregate effect sizes. Use the abstract and discussion sections; skip Methods and Results tables. Tag `doc_type: review_article` and exclude from certain retrieval filters.
+
+# RECOMMENDED CHANGE
+The blanket exclusion of Results sections is too restrictive. Moderator tables within meta-analyses — showing for which patient characteristics an effect size rises or falls — are directly actionable at session time. A therapist calibrating exposure intensity for a client with high baseline shame benefits from knowing that shame is a documented PE non-response predictor in the relevant moderator analysis.
+
+**Revised guidance:** Exclude aggregate-only effect size summaries (e.g., "g = 0.74 across 32 studies with no subgroup breakdown"). Include Results tables that report subgroup or moderator findings, tagged `evidence_base: meta_analytic` and with `session_event_tags` set to the specific events those moderators address.
+# END RECOMMENDED CHANGE
 
 **High-quality qualitative process research** — Studies using tape-assisted recall, sequential process coding (e.g., SASB, CCRT), or intensive single-case designs that directly describe session-level events. These are rare but valuable.
 
@@ -280,6 +332,18 @@ practice_recommendation_level:
   not_applicable
 ```
 
+# RECOMMENDED CHANGE
+The `practice_recommendation_level` taxonomy only covers degrees of positive support. Clinical literature also contains explicit cautionary and contraindicated guidance — "this technique should not be used before adequate alliance is established," "MI without CBT is insufficient for BPD," "avoid direct challenge of delusions." There is currently no way to represent this polarity.
+
+Recommended additions:
+```
+use_with_caution    (technique has evidence but requires specific preconditions or populations)
+contraindicated     (explicitly advised against in this context in the source document)
+```
+
+These pair with the `clinical_caution` field recommended under New Fields below.
+# END RECOMMENDED CHANGE
+
 ## New Fields to Add
 
 **`therapeutic_modality`** (array of strings, controlled vocabulary)
@@ -290,6 +354,18 @@ CBT, CBT-I, BA, REBT, Schema, DBT, ACT, CFT, FAP, CPT, PE, EMDR, TF-CBT, NET,
 IPT, IPSRT, PDT, relational, object_relations, EFT, AEDP, MI, MBCT, MBSR, MBRP,
 IFS, ISTDP, Gottman, narrative, supportive, integrative
 ```
+
+# RECOMMENDED CHANGE
+The following modalities are missing from this enum despite having dedicated corpus texts or clinical literature relevant to this system:
+
+```
+SE                (Somatic Experiencing — Levine; body-based trauma approach)
+SP                (Sensorimotor Psychotherapy — Ogden; body-based trauma approach)
+UP                (Unified Protocol — Barlow's transdiagnostic approach; distinct from individual modalities it subsumes)
+```
+
+`SE` appears in the domain vocabulary description but is absent from this enum. `UP` is represented by a corpus text (Barlow's Unified Protocol) but has no discrete tag; tagging it only as `CBT` or `ACT` loses the transdiagnostic retrieval signal.
+# END RECOMMENDED CHANGE
 
 This is an array because some texts (e.g., Barlow's Unified Protocol) explicitly cut across modalities.
 
@@ -302,6 +378,20 @@ GAD, PTSD, complex_trauma, OCD, BPD, ADHD, SUD, eating_disorder, grief_bereaveme
 chronic_pain, somatic, psychosis, narcissistic, antisocial, avoidant, dependent,
 relationship_family, medical_stress, impulse_control, insomnia, other
 ```
+
+# RECOMMENDED CHANGE
+The following presentations are clinically common and have their own specialist literature but are absent from this enum:
+
+```
+dissociative_disorders    (DID, OSDD, DPDR — distinct from complex_trauma; has its own treatment literature and
+                           distinct session event profile, e.g., mid-session part switching)
+health_anxiety            (illness anxiety disorder, somatic symptom disorder — distinct from somatic)
+hoarding                  (OCD-spectrum but requires a distinct ERP protocol; own IOCDF guidelines)
+bfrb                      (body-focused repetitive behaviors: trichotillomania, excoriation disorder)
+autism_spectrum           (ASD with co-occurring mental health presentations)
+perinatal                 (PPD, PPA, birth trauma — specialized presentation with its own evidence base)
+```
+# END RECOMMENDED CHANGE
 
 **`session_event_tags`** (array of strings, controlled vocabulary)
 The in-session event types that this chunk directly addresses. This is the retrieval trigger for the real-time system — when the session monitor detects a rupture, it filters retrieval on `session_event_tags contains "rupture"`. Align with the CORPUS_NOTES event taxonomy (see the PMC reference).
@@ -328,6 +418,29 @@ termination_process          (ending phase, goodbye, relapse prevention)
 none                         (chunk is reference/background; not event-specific)
 ```
 
+# RECOMMENDED CHANGE
+The following session event types are clinically well-documented and each has its own literature, but are absent from this taxonomy:
+
+```
+shame_activation          (patient displays or discloses acute shame — distinct from guilt; central affect
+                           in BPD, trauma, SUD, eating disorders; CFT, AEDP, EFT have specific protocols)
+somatic_activation        (patient reports or displays body-based distress: tension, freeze, numbing,
+                           dissociative grounding needs — trigger for somatic/body-based interventions)
+therapist_self_disclosure (therapist uses self-disclosure; has its own indications/contraindications
+                           literature; not captured by any existing tag)
+avoidance_safety_behavior (within-session safety behaviors, especially relevant in ERP for OCD and PE
+                           for PTSD — has specific protocol response distinct from general resistance)
+minority_stress_disclosure (client discloses discrimination, microaggression, or structural oppression;
+                           requires affirmative response distinct from general historical_disclosure)
+cultural_mismatch         (therapist detects or client signals a cultural misattunement — distinct from
+                           alliance rupture; has its own repair literature)
+premature_termination_signal (client signals dropout intention mid-treatment without formal notice;
+                           has its own retention intervention literature; distinct from termination_process)
+grief_loss_activation     (acute grief process emerging mid-session — distinct from the clinical_presentation
+                           tag grief_bereavement, which is document-level)
+```
+# END RECOMMENDED CHANGE
+
 **`session_phase`** (string, controlled vocabulary)
 Where in the arc of treatment this chunk applies. Useful for retrieval when the session monitor knows the patient's treatment stage.
 
@@ -340,6 +453,14 @@ termination
 crisis                       (phase-agnostic acute response)
 any                          (applies throughout treatment)
 ```
+
+# RECOMMENDED CHANGE
+The enum is missing a pre-therapy consultation stage. Many clinicians see clients for a matching or expectancy-setting consultation before formal treatment begins; this phase has its own MI-for-engagement and treatment-matching literature.
+
+```
+pre_intake_consultation      (before formal treatment begins; expectancy setting, engagement work)
+```
+# END RECOMMENDED CHANGE
 
 **`target_audience`** (string, controlled vocabulary)
 Who the source document was written for. Critical for preventing patient-facing workbook content from being surfaced as clinical guidance.
@@ -356,6 +477,45 @@ general                      (lay audience)
 Named clinical techniques referenced in the chunk. Distinct from `keywords` in that these should be proper technique names rather than topic terms. 0–10 items recommended.
 
 Examples: `"Socratic questioning"`, `"behavioral activation"`, `"imaginal exposure"`, `"chain analysis"`, `"TIPP skills"`, `"cognitive restructuring"`, `"EMDR bilateral stimulation"`, `"two-chair dialogue"`, `"motivational interviewing OARS"`
+
+# RECOMMENDED CHANGE
+**Three new fields to add for clinical safety and training gatekeeping:**
+
+**`clinical_caution`** (array of strings, Gemini-extracted free text)
+Explicit contraindications or precautions stated in the chunk. Examples: "contraindicated without prior stabilization work," "requires dissociation assessment before proceeding," "not appropriate in first three sessions." The RTA retrieval system should surface caution flags alongside technique recommendations — not suppress them. 0–5 items.
+
+*Why this matters:* The system can currently retrieve "use imaginal exposure" for a trauma presentation without any flag that this technique is contraindicated without prior dissociative screening. This is a patient safety issue.
+
+**`training_level_required`** (string, controlled vocabulary)
+The minimum clinician training level for the technique(s) described in the chunk. Prevents the system from surfacing specialist-certification-required guidance to a supervised trainee.
+
+```
+generalist          (any licensed therapist)
+supervised_trainee  (appropriate with supervision)
+post_licensure      (requires post-licensure clinical experience)
+specialist_trained  (requires modality-specific certification: EMDR, ISTDP, IFS, etc.)
+```
+
+**`risk_dimension_tags`** (array of strings, controlled vocabulary)
+For chunks addressing chronic or baseline risk monitoring — not only acute crisis escalation. Risk assessment is a background ongoing task for most clients, not only those in active crisis.
+
+```
+suicide_ideation_chronic      (passive SI, chronic ideation monitoring)
+self_harm_nonsuicidal         (NSSI patterns between episodes)
+homicide_risk                 (ongoing threat-to-others assessment)
+substance_relapse_monitoring  (SUD relapse warning sign tracking)
+psychotic_decompensation      (prodromal monitoring)
+eating_disorder_medical_risk  (AN, purging — physical risk tracking across sessions)
+```
+
+The RTA system should run a passive risk-tracking retrieval pass on every session using this field, independent of whether `crisis_escalation` fires.
+
+**Note on the `entities` field in `config/metadata_schema.json`:**
+The current schema has an `entities` field carrying over from the biomedical template ("drugs, conditions, genes, procedures"). This field is not mentioned here and is superseded by `technique_tags` and `keywords`. Either rename it to `named_techniques` to serve a psychotherapy-specific purpose, or remove it and let `technique_tags` absorb the function.
+
+**Note on `domain` vs. `therapeutic_modality` field semantics:**
+These two fields carry overlapping signal. To prevent inconsistent Gemini tagging, the distinction should be documented explicitly: `domain` is a *document-level* property assigned from the source's primary orientation (set once per document); `therapeutic_modality` is a *chunk-level* property extracted from the passage content and may differ from the document's domain. This distinction should appear in both the schema description fields and the Gemini extraction prompt.
+# END RECOMMENDED CHANGE
 
 ## Recommended Full Schema (Proposed Replacement)
 
@@ -497,4 +657,6 @@ Examples: `"Socratic questioning"`, `"behavioral activation"`, `"imaginal exposu
 
 6. **The `target_audience=patient` filter should be a hard retrieval exclusion**, not a soft ranking signal. Implement this as a pre-filter in the searcher rather than relying on the ranker to deprioritize it.
 
-
+# RECOMMENDED CHANGE
+7. **Risk monitoring should not be solely event-triggered.** The current schema treats risk as a session-event flag (`crisis_escalation`). Clinically, ongoing suicide risk, NSSI patterns, and relapse risk require a passive background retrieval pass on every session — not only when an acute crisis is detected. Implement a separate low-priority retrieval path keyed on `risk_dimension_tags` (see new fields above) that runs alongside the main event-triggered path and surfaces monitoring-relevant content at lower priority than acute guidance.
+# END RECOMMENDED CHANGE
