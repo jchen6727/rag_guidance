@@ -28,6 +28,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -62,9 +63,10 @@ def ingest_file(
       2. Extract text and structure from the PDF
       3. Chunk the extracted document
       4. Generate metadata for each chunk via Gemini
-      5. Upload PDF and chunk JSONL to GCS
-      6. Import chunks into Vertex AI Search
-      7. Wait for import LRO completion
+      5. Filter out skip_doc_types chunks (e.g. front_matter)
+      6. Upload PDF and chunk JSONL to GCS
+      7. Import chunks into Vertex AI Search
+      8. Wait for import LRO completion
 
     Args:
         pdf_path: Absolute path to the PDF file.
@@ -80,7 +82,85 @@ def ingest_file(
         Summary dict with keys: file, doc_id, n_chunks, n_metadata_failures,
         gcs_pdf_uri, gcs_chunks_uri, import_success, import_failures, elapsed_s.
     """
-    raise NotImplementedError
+    t0 = time.time()
+
+    # 1. Compute doc_id
+    doc_id = uploader.compute_doc_id(pdf_path)
+    logger.info("  doc_id: %s...", doc_id[:16])
+
+    # 2. Extract
+    logger.info("  Extracting text from %s...", pdf_path.name)
+    doc = extractor.extract(pdf_path)
+    logger.info("  Extracted %d page(s)", len(doc.pages))
+
+    # 3. Chunk
+    logger.info("  Chunking...")
+    chunks = chunker.chunk(doc)
+    logger.info("  Produced %d chunk(s)", len(chunks))
+
+    # 4. Generate metadata
+    n_failures = 0
+    logger.info("  Generating metadata for %d chunk(s)...", len(chunks))
+    for chunk in chunks:
+        try:
+            metadata = metadata_gen.generate(chunk)
+            metadata.source_file = doc.source_file  # override with actual filename
+            chunk.metadata = metadata
+        except Exception as exc:
+            logger.warning("  Metadata failed for %s: %s", chunk.chunk_id, exc)
+            n_failures += 1
+
+    # 5. Filter skip_doc_types
+    skip_types = set(chunker._config.skip_doc_types)
+    if skip_types:
+        before = len(chunks)
+        chunks = [
+            c for c in chunks
+            if c.metadata is None or c.metadata.doc_type not in skip_types
+        ]
+        skipped = before - len(chunks)
+        if skipped:
+            logger.info("  Filtered %d chunk(s) with skip_doc_types", skipped)
+
+    gcs_pdf_uri = ""
+    gcs_chunks_uri = ""
+    import_success = 0
+    import_failures = 0
+
+    if not dry_run and chunks:
+        # 6. Upload to GCS
+        logger.info("  Uploading PDF and %d chunk(s) to GCS...", len(chunks))
+        gcs_pdf_uri = uploader.upload_pdf(pdf_path, doc_id)
+        gcs_chunks_uri = uploader.upload_chunks(chunks, doc_id)
+
+        # 7. Import into Vertex AI Search
+        logger.info("  Starting Vertex AI Search import...")
+        op_name = indexer.import_chunks(gcs_chunks_uri, doc_id)
+
+        # 8. Wait for LRO completion
+        logger.info("  Waiting for import LRO...")
+        result = indexer.wait_for_import(op_name)
+        import_success = result.success_count
+        import_failures = result.failure_count
+        if result.errors:
+            for err in result.errors[:5]:
+                logger.warning("  Import error sample: %s", err)
+
+    elif dry_run:
+        logger.info("  [DRY RUN] Skipping upload and index steps.")
+
+    elapsed = time.time() - t0
+    return {
+        "file": pdf_path.name,
+        "doc_id": doc_id,
+        "n_chunks": len(chunks),
+        "n_metadata_failures": n_failures,
+        "gcs_pdf_uri": gcs_pdf_uri,
+        "gcs_chunks_uri": gcs_chunks_uri,
+        "import_success": import_success,
+        "import_failures": import_failures,
+        "elapsed_s": round(elapsed, 1),
+    }
 
 
 def scan_corpus(corpus_dir: Path, manifest_path: Path, force: bool = False) -> list[Path]:
@@ -94,7 +174,38 @@ def scan_corpus(corpus_dir: Path, manifest_path: Path, force: bool = False) -> l
     Returns:
         List of PDF paths to ingest, sorted alphabetically.
     """
-    raise NotImplementedError
+    all_pdfs = sorted(corpus_dir.glob("*.pdf"))
+
+    if force or not manifest_path.exists():
+        return all_pdfs
+
+    with open(manifest_path) as f:
+        manifest: dict[str, str] = json.load(f)
+
+    return [p for p in all_pdfs if p.name not in manifest]
+
+
+def _update_manifest(manifest_path: Path, file_name: str, doc_id: str) -> None:
+    """Append a successfully ingested file to the manifest."""
+    import os
+    import tempfile
+
+    manifest: dict[str, str] = {}
+    if manifest_path.exists():
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+
+    manifest[file_name] = doc_id
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(manifest_path.parent), suffix=".json.tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(manifest, f, indent=2)
+        Path(tmp).rename(manifest_path)
+    except Exception:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def print_summary(results: list[dict]) -> None:
@@ -103,7 +214,30 @@ def print_summary(results: list[dict]) -> None:
     Args:
         results: List of result dicts from ingest_file().
     """
-    raise NotImplementedError
+    sep = "=" * 70
+    print(f"\n{sep}")
+    print(f"Ingestion Summary  ({len(results)} file(s))")
+    print(sep)
+    total_chunks = 0
+    total_failures = 0
+    for r in results:
+        status = "WARN" if r.get("import_failures", 0) > 0 else "OK  "
+        print(f"[{status}] {r['file']}")
+        print(f"       doc_id  : {r['doc_id'][:24]}...")
+        print(f"       chunks  : {r['n_chunks']}  (metadata failures: {r['n_metadata_failures']})")
+        if r["gcs_pdf_uri"]:
+            print(f"       pdf     : {r['gcs_pdf_uri']}")
+        if r["gcs_chunks_uri"]:
+            print(f"       chunks  : {r['gcs_chunks_uri']}")
+        print(f"       import  : {r['import_success']} ok / {r['import_failures']} failed")
+        print(f"       elapsed : {r['elapsed_s']}s")
+        total_chunks += r["n_chunks"]
+        total_failures += r["import_failures"]
+    print(sep)
+    print(f"Total: {total_chunks} chunks across {len(results)} file(s)")
+    if total_failures:
+        print(f"WARNING: {total_failures} import failure(s) — check logs above")
+    print(sep)
 
 
 def main() -> None:
@@ -166,6 +300,12 @@ def main() -> None:
             dry_run=args.dry_run,
         )
         results.append(result)
+
+        # Update manifest after each successful (non-dry-run) ingestion
+        if not args.dry_run and result["import_failures"] == 0:
+            _update_manifest(
+                settings.manifest_path, result["file"], result["doc_id"]
+            )
 
     print_summary(results)
 

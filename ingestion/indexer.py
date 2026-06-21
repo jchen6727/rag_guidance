@@ -22,6 +22,7 @@ import time
 from typing import Optional
 
 from google.cloud import discoveryengine_v1beta as discoveryengine
+from google.longrunning.operations_pb2 import GetOperationRequest
 
 from models import ImportResult
 
@@ -90,7 +91,24 @@ class VertexSearchIndexer:
         Raises:
             google.api_core.exceptions.GoogleAPIError: On request failure.
         """
-        raise NotImplementedError
+        client = self._get_client()
+        parent = f"{self._datastore_name}/branches/default_branch"
+
+        request = discoveryengine.ImportDocumentsRequest(
+            parent=parent,
+            gcs_source=discoveryengine.GcsSource(
+                input_uris=[gcs_jsonl_uri],
+                data_schema="document",
+            ),
+            reconciliation_mode=(
+                discoveryengine.ImportDocumentsRequest.ReconciliationMode.FULL
+            ),
+        )
+
+        operation = client.import_documents(request=request)
+        op_name = operation.operation.name
+        logger.info("Import LRO started for doc %s: %s", doc_id, op_name)
+        return op_name
 
     def wait_for_import(
         self,
@@ -115,7 +133,38 @@ class VertexSearchIndexer:
             TimeoutError: If the operation does not complete within `timeout`.
             ImportError: If the operation completes with a terminal error status.
         """
-        raise NotImplementedError
+        client = self._get_client()
+        ops_client = client._transport.operations_client
+        start = time.time()
+
+        while True:
+            elapsed = time.time() - start
+            if elapsed > timeout:
+                raise TimeoutError(
+                    f"Import LRO {operation_name} timed out after {timeout}s"
+                )
+
+            op = ops_client.get_operation(GetOperationRequest(name=operation_name))
+
+            if op.done:
+                if op.HasField("error"):
+                    raise ImportError(
+                        f"Import LRO failed: {op.error.message} (code {op.error.code})"
+                    )
+                metadata = discoveryengine.ImportDocumentsMetadata()
+                op.metadata.Unpack(metadata)
+                return self._parse_import_result(
+                    {
+                        "successCount": metadata.success_count,
+                        "failureCount": metadata.failure_count,
+                        "errorSamples": list(metadata.error_samples),
+                    }
+                )
+
+            logger.info(
+                "Import in progress for %s (%.0fs elapsed)...", operation_name, elapsed
+            )
+            time.sleep(poll_interval)
 
     def delete_document(self, chunk_id: str) -> None:
         """Delete a single document (chunk) from the DataStore by its ID.
@@ -129,7 +178,12 @@ class VertexSearchIndexer:
         Raises:
             google.api_core.exceptions.NotFound: If the document does not exist.
         """
-        raise NotImplementedError
+        client = self._get_client()
+        name = (
+            f"{self._datastore_name}/branches/default_branch/documents/{chunk_id}"
+        )
+        client.delete_document(name=name)
+        logger.debug("Deleted document: %s", chunk_id)
 
     def list_documents(self, page_size: int = 100) -> list[str]:
         """List all document IDs currently in the DataStore.
@@ -142,7 +196,12 @@ class VertexSearchIndexer:
         Returns:
             List of document ID strings.
         """
-        raise NotImplementedError
+        client = self._get_client()
+        parent = f"{self._datastore_name}/branches/default_branch"
+        request = discoveryengine.ListDocumentsRequest(
+            parent=parent, page_size=page_size
+        )
+        return [doc.id for doc in client.list_documents(request=request)]
 
     def _get_client(self) -> discoveryengine.DocumentServiceClient:
         """Lazy-initialize and return the Discovery Engine document service client.
@@ -150,7 +209,9 @@ class VertexSearchIndexer:
         Returns:
             Authenticated DocumentServiceClient.
         """
-        raise NotImplementedError
+        if self._client is None:
+            self._client = discoveryengine.DocumentServiceClient()
+        return self._client
 
     def _parse_import_result(self, operation_metadata: dict) -> ImportResult:
         """Extract success/failure counts from a completed import operation's metadata.
@@ -161,4 +222,10 @@ class VertexSearchIndexer:
         Returns:
             ImportResult with counts populated from metadata fields.
         """
-        raise NotImplementedError
+        return ImportResult(
+            operation_name="",
+            success_count=int(operation_metadata.get("successCount") or 0),
+            failure_count=int(operation_metadata.get("failureCount") or 0),
+            errors=[str(e) for e in operation_metadata.get("errorSamples", [])],
+            completed=True,
+        )

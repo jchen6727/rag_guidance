@@ -45,10 +45,18 @@ class ChunkerConfig:
     embedding_model: str = "all-MiniLM-L6-v2"
     """sentence-transformers model for semantic boundary detection."""
 
+    embedding_batch_size: int = 64
+    """Sentences per forward pass through the embedding model."""
+
+    max_section_pages: int = 50
+    """Sections exceeding this page count are force-split at page boundaries
+    before semantic splitting to avoid computing embeddings for huge sections."""
+
     header_patterns: list[str] = field(default_factory=lambda: [
         r"^(Chapter|Section|CHAPTER|SECTION)\s+\d+",
         r"^\d+\.\d*\s+[A-Z]",   # "3.1 Introduction" style
-        r"^[A-Z][A-Z\s]{4,}$",  # ALL CAPS headers
+        r"^[A-Z][A-Z\s]{4,40}$",  # ALL CAPS headers (bounded to avoid false positives)
+        r"^(Abstract|Introduction|Methods|Results|Discussion|Conclusion|Background|References)\s*$",
     ])
     """Regex patterns used to detect section headers in page text."""
 
@@ -58,6 +66,55 @@ class ChunkerConfig:
         "bibliography",
     ])
     """Chunk metadata doc_types to exclude from the final output."""
+
+    front_matter_indicators: list[str] = field(default_factory=lambda: [
+        "Table of Contents",
+        "Index",
+        "Bibliography",
+        "Acknowledgements",
+        "Acknowledgments",
+        "List of Figures",
+        "List of Tables",
+        "Preface",
+        "Foreword",
+    ])
+    """Lines whose presence strongly suggests front-matter content."""
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> "ChunkerConfig":
+        """Load chunking parameters from config/chunk_config.yaml.
+
+        Falls back to Python defaults for any key not present in the file.
+
+        Args:
+            path: Path to chunk_config.yaml.
+
+        Returns:
+            ChunkerConfig populated from the YAML file.
+
+        Raises:
+            FileNotFoundError: If the YAML file does not exist.
+        """
+        import yaml
+        with open(path) as f:
+            data = yaml.safe_load(f) or {}
+        defaults = cls()
+        return cls(
+            max_tokens=data.get("max_tokens", defaults.max_tokens),
+            min_tokens=data.get("min_tokens", defaults.min_tokens),
+            overlap_tokens=data.get("overlap_tokens", defaults.overlap_tokens),
+            semantic_similarity_threshold=data.get(
+                "semantic_similarity_threshold", defaults.semantic_similarity_threshold
+            ),
+            embedding_model=data.get("embedding_model", defaults.embedding_model),
+            embedding_batch_size=data.get("embedding_batch_size", defaults.embedding_batch_size),
+            max_section_pages=data.get("max_section_pages", defaults.max_section_pages),
+            header_patterns=data.get("header_patterns", defaults.header_patterns),
+            skip_doc_types=data.get("skip_doc_types", defaults.skip_doc_types),
+            front_matter_indicators=data.get(
+                "front_matter_indicators", defaults.front_matter_indicators
+            ),
+        )
 
 
 class ContextAwareChunker:
@@ -90,7 +147,18 @@ class ContextAwareChunker:
         Returns:
             Ordered list of Chunks. Empty if the document has no extractable text.
         """
-        raise NotImplementedError
+        sections = self._structural_split(doc)
+        all_chunks: list[Chunk] = []
+        chunk_index = 0
+
+        for section_name, pages in sections:
+            section_chunks = self._semantic_split(
+                section_name, pages, doc.doc_id, chunk_index
+            )
+            all_chunks.extend(section_chunks)
+            chunk_index += len(section_chunks)
+
+        return all_chunks
 
     def _structural_split(
         self, doc: ExtractedDocument
@@ -108,7 +176,29 @@ class ContextAwareChunker:
             List of (section_name, pages) tuples in document order.
             `section_name` is the header text or "preamble" for pre-header pages.
         """
-        raise NotImplementedError
+        sections: list[tuple[str, list[Page]]] = []
+        current_header = "preamble"
+        current_pages: list[Page] = []
+
+        for page in doc.pages:
+            headers = self._detect_section_headers(page.text)
+            if headers:
+                if current_pages:
+                    sections.append((current_header, current_pages))
+                current_header = headers[0]
+                current_pages = [page]
+            else:
+                current_pages.append(page)
+
+            # Force-split oversized sections at page boundaries
+            if len(current_pages) >= self._config.max_section_pages:
+                sections.append((current_header, current_pages))
+                current_pages = []
+
+        if current_pages:
+            sections.append((current_header, current_pages))
+
+        return sections if sections else [("preamble", doc.pages)]
 
     def _semantic_split(
         self,
@@ -136,7 +226,87 @@ class ContextAwareChunker:
         Returns:
             List of Chunks for this section.
         """
-        raise NotImplementedError
+        # Step 1: collect sentences with page provenance
+        all_sentences: list[str] = []
+        sentence_pages: list[int] = []
+
+        for page in pages:
+            text = page.text.strip()
+            if not text:
+                continue
+            sents = re.split(r"(?<=[.!?])\s+", text)
+            for sent in sents:
+                sent = sent.strip()
+                if sent:
+                    all_sentences.append(sent)
+                    sentence_pages.append(page.page_num)
+
+        if not all_sentences:
+            return []
+
+        # Step 2: find semantic split points
+        if len(all_sentences) > 1:
+            embeddings = self._embed_sentences(all_sentences)
+            semantic_boundaries = set(self._find_semantic_boundaries(embeddings))
+        else:
+            semantic_boundaries = {0}
+
+        # Step 3: greedily build chunks, splitting at semantic boundaries and token budget
+        chunks: list[Chunk] = []
+        chunk_index = start_chunk_idx
+        prev_tail_words: list[str] = []
+
+        current_sents: list[str] = []
+        current_pages_list: list[int] = []
+
+        def emit() -> None:
+            nonlocal chunk_index
+            if not current_sents:
+                return
+            body = " ".join(current_sents)
+            text_with_overlap = (
+                (" ".join(prev_tail_words) + " " + body).strip()
+                if prev_tail_words
+                else body
+            )
+            page_start = min(current_pages_list)
+            page_end = max(current_pages_list)
+            chunks.append(
+                Chunk(
+                    chunk_id=self._make_chunk_id(doc_id, chunk_index),
+                    doc_id=doc_id,
+                    text=text_with_overlap,
+                    page_start=page_start,
+                    page_end=page_end,
+                    chunk_index=chunk_index,
+                    parent_section=section_name,
+                )
+            )
+            # Update overlap tail from the body (not including previous overlap)
+            body_words = body.split()
+            prev_tail_words.clear()
+            if self._config.overlap_tokens > 0:
+                prev_tail_words.extend(body_words[-self._config.overlap_tokens :])
+            chunk_index += 1
+            current_sents.clear()
+            current_pages_list.clear()
+
+        for i, (sent, page_num) in enumerate(zip(all_sentences, sentence_pages)):
+            is_semantic_boundary = i in semantic_boundaries and i > 0
+            projected_tokens = self._token_count(" ".join(current_sents + [sent]))
+
+            if current_sents and projected_tokens > self._config.max_tokens:
+                # Hard token limit reached — emit before adding this sentence
+                emit()
+            elif is_semantic_boundary and self._token_count(" ".join(current_sents)) >= self._config.min_tokens:
+                # Semantic boundary with enough content — emit
+                emit()
+
+            current_sents.append(sent)
+            current_pages_list.append(page_num)
+
+        emit()
+        return chunks
 
     def _detect_section_headers(self, text: str) -> list[str]:
         """Return all lines in text that match any configured header pattern.
@@ -147,7 +317,16 @@ class ContextAwareChunker:
         Returns:
             List of matched header strings, in order of appearance.
         """
-        raise NotImplementedError
+        matched: list[str] = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            for pattern in self._config.header_patterns:
+                if re.match(pattern, line):
+                    matched.append(line)
+                    break
+        return matched
 
     def _embed_sentences(self, sentences: list[str]) -> "np.ndarray":
         """Compute sentence embeddings using the configured model.
@@ -160,7 +339,14 @@ class ContextAwareChunker:
         Returns:
             2D numpy array of shape (len(sentences), embedding_dim).
         """
-        raise NotImplementedError
+        if self._embedding_model is None:
+            self._load_embedding_model()
+        return self._embedding_model.encode(
+            sentences,
+            batch_size=self._config.embedding_batch_size,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
 
     def _find_semantic_boundaries(
         self, embeddings: "np.ndarray"
@@ -178,7 +364,21 @@ class ContextAwareChunker:
             Sorted list of sentence indices that start new chunks.
             Index 0 is always included.
         """
-        raise NotImplementedError
+        import numpy as np
+
+        boundaries = [0]
+        for i in range(1, len(embeddings)):
+            a = embeddings[i - 1]
+            b = embeddings[i]
+            norm_a = np.linalg.norm(a)
+            norm_b = np.linalg.norm(b)
+            if norm_a == 0.0 or norm_b == 0.0:
+                similarity = 0.0
+            else:
+                similarity = float(np.dot(a, b) / (norm_a * norm_b))
+            if similarity < self._config.semantic_similarity_threshold:
+                boundaries.append(i)
+        return boundaries
 
     def _token_count(self, text: str) -> int:
         """Approximate token count using whitespace splitting (fast, not exact).
@@ -192,7 +392,7 @@ class ContextAwareChunker:
         Returns:
             Approximate token count.
         """
-        raise NotImplementedError
+        return len(text.split())
 
     def _make_chunk_id(self, doc_id: str, chunk_index: int) -> str:
         """Build the canonical chunk ID string.
@@ -206,7 +406,7 @@ class ContextAwareChunker:
         Returns:
             Unique chunk identifier string.
         """
-        raise NotImplementedError
+        return f"{doc_id}_{chunk_index:05d}"
 
     def _load_embedding_model(self) -> None:
         """Lazy-initialize the sentence-transformers model.
@@ -214,4 +414,6 @@ class ContextAwareChunker:
         Called on first use of _embed_sentences to avoid loading the model
         during import (slow) or when Document AI OCR falls back (unnecessary).
         """
-        raise NotImplementedError
+        from sentence_transformers import SentenceTransformer
+        logger.info("Loading embedding model: %s", self._config.embedding_model)
+        self._embedding_model = SentenceTransformer(self._config.embedding_model)
