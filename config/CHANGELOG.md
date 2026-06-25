@@ -1,5 +1,71 @@
 # Config Changelog
 
+## 2026-06-25 — CBT/DBT/IPT scope pruning
+
+Pruned `metadata_schema.json` and `prompt_config.yaml` to reflect the scope of competence of a psychotherapist trained in CBT, DBT, and/or IPT. The guiding principle: every domain, modality tag, and persona must represent something a CBT/DBT/IPT-trained clinician is both qualified to deliver and ethically permitted to claim competence in. Modalities requiring separate certification or belonging to a different therapeutic tradition are removed from the schema enums and from the persona list. Where a removed modality's techniques appear in passing within a kept persona (e.g. psychodynamic formulation concepts within a case formulation persona), the persona is reworded to distinguish *understanding* from *delivery*.
+
+### metadata_schema.json
+
+**`domain` enum — removed 4 values:**
+
+| Removed value | Rationale |
+|---|---|
+| `acceptance_commitment` | ACT, CFT, and FAP are distinct training tracks requiring specific competency development beyond CBT. A CBT/DBT/IPT therapist may be familiar with ACT concepts but is not qualified to deliver ACT as a modality. |
+| `psychodynamic` | PDT, relational, and object-relations approaches are a separate professional training track (psychoanalytic institutes, post-graduate PDT programs). Outside CBT/DBT/IPT ethical bounds. |
+| `emotion_focused` | EFT and AEDP require specific training (York University EFT certification, AEDP Institute). Neither is part of CBT/DBT/IPT competency development. |
+| `systemic_family` | Structural, strategic, narrative, and Gottman couples therapy are family/couples specialty training tracks distinct from individual CBT/DBT/IPT. |
+
+**`therapeutic_modality` enum — removed 19 values:**
+
+| Removed value | Rationale |
+|---|---|
+| `ACT` | Distinct modality; ACBS training required |
+| `CFT` | Compassion Focused Therapy; Paul Gilbert's dedicated training program required |
+| `FAP` | Functional Analytic Psychotherapy; distinct behavioral approach with its own training |
+| `EMDR` | EMDR International Association (EMDRIA) certification required; not within CBT/DBT/IPT scope |
+| `TF-CBT` | Trauma-Focused CBT for children aged 3–17; requires child specialty training and TF-CBT certification beyond standard adult CBT |
+| `NET` | Narrative Exposure Therapy; primarily for refugee/mass trauma populations; requires specific training program |
+| `PDT` | Psychodynamic therapy; separate training track |
+| `relational` | Relational psychoanalysis; separate training track |
+| `object_relations` | Object relations therapy; psychoanalytic training required |
+| `EFT` | Emotion-Focused Therapy; York/ICEEFT certification required |
+| `AEDP` | Accelerated Experiential Dynamic Psychotherapy; AEDP Institute training required |
+| `IFS` | Internal Family Systems; IFS Institute Level 1/2/3 training required |
+| `ISTDP` | Intensive Short-Term Dynamic Psychotherapy; Allan Abbass intensive training required |
+| `Gottman` | Gottman Method couples therapy; Gottman Institute Level 1/2/3 certification required |
+| `narrative` | Narrative therapy; systemic/narrative training track (Dulwich Centre, etc.) |
+| `SE` | Somatic Experiencing; Peter Levine's multi-year practitioner training required |
+| `SP` | Sensorimotor Psychotherapy; Sensorimotor Psychotherapy Institute certification required |
+| `MBSR` | Mindfulness-Based Stress Reduction; requires dedicated MBSR teacher training (200+ hrs), not a psychotherapy competency |
+| `MBRP` | Mindfulness-Based Relapse Prevention; addiction specialty program outside CBT/DBT/IPT scope |
+
+**Descriptions updated:** `subdomain` (removed EMDR example), `technique_tags` (removed EMDR and EFT-specific technique examples), `session_event_tags` (updated shame_activation and somatic_activation to reference CBT/DBT/IPT protocols explicitly), `training_level_required` (updated examples), `time_horizon` (updated open_ended description), `notes.recommended_change_items` (noted SE/SP removal).
+
+---
+
+### prompt_config.yaml
+
+**Personas removed — 4:**
+
+| Removed persona | Rationale |
+|---|---|
+| `acceptance_commitment` | ACT/CFT/FAP outside CBT/DBT/IPT competency scope |
+| `psychodynamic` | PDT/relational/object_relations outside CBT/DBT/IPT scope |
+| `emotion_focused` | EFT/AEDP outside CBT/DBT/IPT scope |
+| `systemic_family` | Structural/Gottman/narrative family therapy outside CBT/DBT/IPT scope |
+
+**Personas updated — 4:**
+
+`default` — Removed references to ACT and psychodynamic approaches. Added explicit out-of-scope redirect instruction: the system will not offer guidance on modalities outside the CBT/DBT/IPT families and will redirect to a modality specialist when those arise.
+
+`trauma_focused` — Removed EMDR (EMDRIA certification required), TF-CBT (child specialty), and NET (refugee/mass trauma specialty). Retained PE and CPT as the two first-line, CBT-based PTSD protocols. Added explicit disclaimer that PE/CPT require formal protocol training beyond general CBT and should not be treated as generic CBT.
+
+`mindfulness_based` — Removed MBSR (wellness/medical program, mindfulness teacher training) and MBRP (addiction specialty). Retained MBCT and mindfulness-as-skill within DBT and CBT. Added explicit redirect to MBSR instructors for MBSR enquiries. Added distinction between MBCT, DBT mindfulness, and CBT attentional retraining functions.
+
+`psychopathology_clinical` — Removed McWilliams as a primary formulation reference (psychoanalytic tradition). Retained Persons, Kuyken-Padesky-Dudley, and Eells as the CBT/integrative formulation tradition. Added explicit language distinguishing *understanding* character structure and developmental history (used to inform CBT/DBT/IPT formulations) from *delivering* psychodynamic treatment.
+
+---
+
 ## 2026-06-24 — Psychotherapy domain migration
 
 ### metadata_schema.json

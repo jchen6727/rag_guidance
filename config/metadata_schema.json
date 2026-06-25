@@ -54,14 +54,10 @@
       "enum": [
         "cognitive_behavioral",
         "dialectical_behavior",
-        "acceptance_commitment",
         "trauma_focused",
-        "psychodynamic",
         "interpersonal",
-        "emotion_focused",
         "motivational_interviewing",
         "mindfulness_based",
-        "systemic_family",
         "crisis_intervention",
         "therapeutic_alliance",
         "clinical_supervision",
@@ -72,7 +68,7 @@
     },
     "subdomain": {
       "type": "string",
-      "description": "Narrower topic within the domain (e.g. 'schema therapy', 'EMDR phase 2', 'adolescent DBT'). Free text; not filterable by default.",
+      "description": "Narrower topic within the domain (e.g. 'schema therapy', 'CPT stuck point work', 'adolescent DBT'). Free text; not filterable by default.",
       "default": ""
     },
 
@@ -105,19 +101,16 @@
         "type": "string",
         "enum": [
           "CBT", "CBT-I", "BA", "REBT", "Schema",
-          "DBT", "ACT", "CFT", "FAP",
-          "CPT", "PE", "EMDR", "TF-CBT", "NET",
+          "DBT",
+          "CPT", "PE",
           "IPT", "IPSRT",
-          "PDT", "relational", "object_relations",
-          "EFT", "AEDP",
           "MI",
-          "MBCT", "MBSR", "MBRP",
-          "IFS", "ISTDP",
-          "Gottman", "narrative", "supportive", "integrative",
-          "SE", "SP", "UP"
+          "MBCT",
+          "UP",
+          "supportive", "integrative"
         ]
       },
-      "description": "Chunk-level: the therapy modality or modalities this passage directly addresses. Primary filter for modality-specific RTA queries. Array because some texts (e.g. Unified Protocol) cut across modalities. SE=Somatic Experiencing, SP=Sensorimotor Psychotherapy, UP=Unified Protocol.",
+      "description": "Chunk-level: the therapy modality or modalities this passage directly addresses. Primary filter for modality-specific RTA queries. Array because some texts (e.g. Unified Protocol) cut across modalities. Scoped to modalities within competence of CBT/DBT/IPT-trained clinicians. UP=Unified Protocol (Barlow's transdiagnostic CBT). MBCT=Mindfulness-Based Cognitive Therapy (CBT derivative). CPT and PE are CBT-based trauma protocols requiring additional training but within CBT scope.",
       "default": []
     },
 
@@ -179,7 +172,7 @@
           "none"
         ]
       },
-      "description": "In-session event types this chunk directly addresses. Primary real-time retrieval trigger for the RTA pipeline. shame_activation: acute shame response (CBT, AEDP, EFT have specific protocols). somatic_activation: body-based distress requiring somatic intervention. avoidance_safety_behavior: within-session safety behaviors (ERP/PE-specific, distinct from resistance_avoidance). minority_stress_disclosure: discrimination/microaggression disclosure requiring affirmative response. cultural_mismatch: cultural misattunement requiring in-session correction. premature_termination_signal: dropout intention disclosed mid-treatment. grief_loss_activation: acute grief emerging mid-session (distinct from grief_bereavement as clinical_presentation).",
+      "description": "In-session event types this chunk directly addresses. Primary real-time retrieval trigger for the RTA pipeline. shame_activation: acute shame response (CBT and DBT have specific protocols; DBT uses opposite action, CBT uses cognitive restructuring and behavioral experiments). somatic_activation: body-based distress requiring grounding or regulation intervention (relevant to DBT distress tolerance, PE within-session affect management). avoidance_safety_behavior: within-session safety behaviors (ERP/PE-specific, distinct from resistance_avoidance). minority_stress_disclosure: discrimination/microaggression disclosure requiring affirmative response. cultural_mismatch: cultural misattunement requiring in-session correction. premature_termination_signal: dropout intention disclosed mid-treatment. grief_loss_activation: acute grief emerging mid-session (distinct from grief_bereavement as clinical_presentation; IPT has specific protocols for grief as a problem area).",
       "default": ["none"]
     },
 
@@ -227,7 +220,7 @@
     "technique_tags": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Named clinical techniques referenced in the chunk (e.g. 'chain analysis', 'imaginal exposure', 'TIPP skills', 'two-chair dialogue', 'EMDR bilateral stimulation'). Gemini-extracted proper technique names — distinct from keywords (topic terms). 0–10 items.",
+      "description": "Named clinical techniques referenced in the chunk (e.g. 'chain analysis', 'imaginal exposure', 'TIPP skills', 'Socratic questioning', 'cognitive restructuring', 'behavioral activation', 'interpersonal incident review'). Gemini-extracted proper technique names — distinct from keywords (topic terms). 0–10 items.",
       "default": []
     },
 
@@ -248,7 +241,7 @@
     "training_level_required": {
       "type": ["string", "null"],
       "enum": ["generalist", "supervised_trainee", "post_licensure", "specialist_trained", null],
-      "description": "Minimum clinician training level for the technique(s) described in this chunk. specialist_trained requires modality-specific certification (EMDR, ISTDP, IFS, etc.). Used to gate retrieval for supervised trainees.",
+      "description": "Minimum clinician training level for the technique(s) described in this chunk. specialist_trained requires protocol-specific certification or supervised practicum (e.g. PE/CPT require formal training beyond basic CBT). Used to gate retrieval for supervised trainees.",
       "default": null
     },
 
@@ -352,7 +345,7 @@
         "open_ended",
         "any"
       ],
-      "description": "Temporal scope of the chunk's clinical relevance. near_term=next 1-4 sessions. short_term=1-3 months. treatment_course=full time-limited treatment arc. open_ended=no defined termination target (long-term dynamic, relational, or supportive therapy). Used for routing longitudinal management queries in the ASA pipeline.",
+      "description": "Temporal scope of the chunk's clinical relevance. near_term=next 1-4 sessions. short_term=1-3 months. treatment_course=full time-limited treatment arc (typical for CBT, DBT, IPT protocols). open_ended=no defined termination target (applies to long-term supportive or maintenance-phase work). Used for routing longitudinal management queries in the ASA pipeline.",
       "default": "any"
     },
 
@@ -382,7 +375,7 @@
     "vertex_ai_search": "String and integer scalar fields are registered as filterable attributes in the DataStore schema. Array fields (therapeutic_modality, clinical_presentation, session_event_tags, analysis_function, patient_population, risk_dimension_tags, outcome_measure_tags, clinical_caution, technique_tags) must be explicitly registered as filterable attributes (type 'key' or 'text') in setup_vertex_search.py for retrieval filter use. Schema changes require purge_datastore.py --confirm followed by full re-ingestion. See config/ISSUES.md for DataStore registration checklist.",
     "domain_vs_modality": "domain is a document-level property assigned from the source's primary orientation (set once per document). therapeutic_modality is a chunk-level property extracted from passage content and may differ from the document's domain. This distinction must appear in the Gemini extraction prompt to prevent inconsistent tagging.",
     "routing_safety": "corpus_scope=asa_only is a correctness constraint on the RTA searcher, not a soft signal. target_audience=patient is a hard exclusion from all retrieval paths except analysis_function=homework_resource. Both filters must be implemented as pre-filters in the searcher, not as ranking adjustments.",
-    "recommended_change_items": "Fields added from RECOMMENDED CHANGE blocks in corpus notes (included in this schema): SE/SP/UP in therapeutic_modality; dissociative_disorders/health_anxiety/hoarding/bfrb/autism_spectrum/perinatal in clinical_presentation; shame_activation/somatic_activation/therapist_self_disclosure/avoidance_safety_behavior/minority_stress_disclosure/cultural_mismatch/premature_termination_signal/grief_loss_activation in session_event_tags; pre_intake_consultation in session_phase; use_with_caution/contraindicated/empirically_derived in practice_recommendation_level; clinical_caution/training_level_required/risk_dimension_tags fields; termination_planning in analysis_function; open_ended in time_horizon. Review config/ISSUES.md for items requiring corpus acquisition decisions.",
+    "recommended_change_items": "Fields added from RECOMMENDED CHANGE blocks in corpus notes (included in this schema): UP in therapeutic_modality; dissociative_disorders/health_anxiety/hoarding/bfrb/autism_spectrum/perinatal in clinical_presentation; shame_activation/somatic_activation/therapist_self_disclosure/avoidance_safety_behavior/minority_stress_disclosure/cultural_mismatch/premature_termination_signal/grief_loss_activation in session_event_tags; pre_intake_consultation in session_phase; use_with_caution/contraindicated/empirically_derived in practice_recommendation_level; clinical_caution/training_level_required/risk_dimension_tags fields; termination_planning in analysis_function; open_ended in time_horizon. SE and SP from the original RECOMMENDED CHANGE blocks were removed in the CBT/DBT/IPT scope pruning pass. Review config/ISSUES.md for items requiring corpus acquisition decisions.",
     "removed_fields": "Removed from prior schema: entities (superseded by technique_tags), evidence_level GRADE A/B/C/D (superseded by practice_recommendation_level). Update ingestion/metadata_gen.py _fallback_extraction() to not populate these fields."
   }
 }
