@@ -2,6 +2,8 @@
 
 **Purpose:** Catalog of all documents recommended across `CORPUS_NOTES_RTA.md`, `CORPUS_NOTES_ASA.md`, and `RECOMMENDATIONS.md`, organized by domain/modality with pipeline tier, utility role, and estimated acquisition cost.
 
+**Clinical Review (2026-06-21):** Reviewed for CBT, IPT, and DBT constraints. Documents in modalities outside that competency scope — specifically EMDR, Somatic Experiencing / Sensorimotor Psychotherapy, IFS, and Emotion-Focused Therapy (EFT) — have been removed. Psychodynamic procedure manuals pruned; formulation and reference texts retained. See `CHANGELOG.md` for the full removal log.
+
 **Legend:**
 - `RTA T1/T2/T3` = Real-Time Analysis tier
 - `ASA T1/T2/T3` = After-Session Analysis tier
@@ -10,19 +12,17 @@
 
 ---
 
-## Domain 1 — Trauma-Focused (PE, CPT, EMDR, TF-CBT, Somatic)
+## Domain 1 — Trauma-Focused (PE, CPT, TF-CBT)
+
+| # | Document | Tier | Utility | Est. Acquisition |
+|---|---|---|---|---|
+> **Excluded (2026-06-21):** Items 3–4 (EMDR — Shapiro, Leeds): EMDR requires modality-specific certification; RC confirmed declined. Items 5–7 (Somatic — Ogden/Minton/Pain, Fisher, Levine): Sensorimotor Psychotherapy and Somatic Experiencing require distinct body-based training beyond CBT/IPT/DBT; RC confirmed declined. Item 9 (EFT for Complex Trauma — Paivio & Pascual-Leone): EFT marker-task approach is a separate modality outside CBT/IPT/DBT scope.
 
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
 | 1 | Foa et al., *Prolonged Exposure Therapy for PTSD* — Therapist Guide (Oxford, 2022) ✓ IN | RTA T1 / ASA T1 | Core PE protocol; step-by-step imaginal/in-vivo procedures; session-moment resolution | $0 (in corpus) |
 | 2 | Resick et al., *Cognitive Processing Therapy for PTSD* (Guilford) | RTA T1 / ASA T1 | Core CPT protocol; stuck-point work, impact statements, cognitive restructuring for trauma | ~$60–80 |
-| 3 | Shapiro, *EMDR: Basic Principles, Protocols, and Procedures* (3rd ed., Guilford) RC | RTA T1 | Primary EMDR clinical manual; eight-phase protocol at session-moment level; covers desensitization, installation, body scan procedures | ~$80–100 |
-| 4 | Leeds, *A Guide to the Standard EMDR Therapy Protocols for Clinicians, Supervisors, and Consultants* RC | RTA T1 | Companion protocol reference for EMDR; consultation-level troubleshooting | ~$60–80 |
-| 5 | Ogden, Minton & Pain, *Trauma and the Body: A Sensorimotor Approach to Psychotherapy* (Norton) RC | RTA T1 | Sensorimotor Psychotherapy manual; body-based trauma work, freeze/collapse response procedures; directly feeds `somatic_activation` event tag | ~$70–90 |
-| 6 | Fisher, *Healing the Fragmented Selves of Trauma Survivors* RC | RTA T1 | Parts-based somatic trauma work; dissociative presentation protocols; covers mid-session part-switching events | ~$50–70 |
-| 7 | Levine, *In an Unspoken Voice: How the Body Releases Trauma* (clinical chapters) RC | RTA T1 | SE body-based trauma application; somatic discharge procedures | ~$25–40 |
 | 8 | Cohen, Mannarino & Deblinger, *Treating Trauma and Traumatic Grief in Children and Adolescents* (TF-CBT manual) RC | RTA T1 | TF-CBT clinician manual for youth trauma; session-by-session procedural guidance | ~$60–80 |
-| 9 | Paivio & Pascual-Leone, *Emotion-Focused Therapy for Complex Trauma* (APA) | RTA T1 | EFT complex trauma procedures; empty-chair, two-chair work for trauma presentations | ~$60–80 |
 | 10 | APA Clinical Practice Guideline for PTSD (2017) | RTA T2 | Evidence-based procedural recommendations; psychotherapy sections only | **Free** (APA website) |
 | 11 | Foa et al. (1999, 2005), PE vs. SIT vs. combined — PTSD RCT | ASA T1 | Moderator and differential response data for PTSD treatment matching | ~$30–50 (journal) |
 | 12 | Resick et al. (2002, 2008), CPT vs. PE for PTSD | ASA T1 | Differential response by presentation; non-responder switching data | ~$30–50 (journal) |
@@ -105,37 +105,20 @@
 
 ---
 
-## Domain 7 — IFS (Internal Family Systems)
-
-| # | Document | Tier | Utility | Est. Acquisition |
-|---|---|---|---|---|
-| 54 | Schwartz & Sweezy, *Internal Family Systems Therapy* (2nd ed., Guilford) RC | RTA T1 | Core IFS procedures; parts work, unburdening, Self-led session facilitation | ~$70–90 |
-| 55 | Anderson, Sweezy & Schwartz (eds.), *Internal Family Systems Skills Training Manual* (PESI) RC | RTA T1 | Session-level skills for IFS; structured protocol tools | ~$60–80 |
+---
 
 ---
 
-## Domain 8 — Emotion-Focused Therapy (EFT / AEDP)
+## Domain 9 — Psychodynamic / Relational (Reference and Formulation Only)
 
-| # | Document | Tier | Utility | Est. Acquisition |
-|---|---|---|---|---|
-| 56 | Greenberg, *Emotion-Focused Therapy* (APA) | RTA T1 | Core EFT; marker-task maps (empty-chair, two-chair, focusing) — in-session event-triggered retrieval | ~$60–80 |
-| 57 | Elliott, Watson, Goldman & Greenberg, *Learning Emotion-Focused Therapy* (APA) | RTA T1 | EFT training manual; annotated case material; session task resolution sequences | ~$60–80 |
-| 58 | Greenberg & Goldman (eds.), *Case Studies in Emotion-Focused Therapy* | RTA T1 | EFT case book with session-level annotation; pattern matching for therapist | ~$50–70 |
-
----
-
-## Domain 9 — Psychodynamic / Relational
+> **Scope note (2026-06-21):** Retained as cross-modal reference for defense and character recognition, case formulation, and countertransference management — not as treatment-protocol source material. Items 61, 62, 64, 66 (psychodynamic procedure manuals) removed; outside CBT/IPT/DBT scope for clinical trial oversight.
 
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
 | 59 | McWilliams, *Psychoanalytic Diagnosis* (2nd ed.) | RTA T1 | Character structure and defense mechanism recognition; in-session clinical reasoning | ~$60–80 |
 | 60 | McWilliams, *Psychoanalytic Case Formulation* | RTA T1 / ASA T1 | Formulation procedures; dynamic understanding of in-session phenomena | ~$50–70 |
-| 61 | Binder, *Key Competencies in Brief Dynamic Psychotherapy* | RTA T1 | In-session dynamic therapy procedures; vignette-based | ~$50–70 |
-| 62 | Clarkin, Fonagy & Gabbard (eds.), *Psychodynamic Psychotherapy for Personality Disorders* | RTA T2 | Personality disorder presentations in dynamic frame; treatment implications | ~$90–120 |
 | 63 | Herman, *Trauma and Recovery* | RTA T2 | Complex PTSD conceptual framework; historical trauma presentations | ~$20–30 |
-| 64 | Aron, *A Meeting of Minds: Mutuality in Psychoanalysis* | RTA T2 | Relational process; transference-countertransference in-session events | ~$50–70 |
 | 65 | Hayes, Gelso & Hummel (2011), "Managing countertransference" (APA review chapter) | RTA T2 | Countertransference management procedures; supervision-analog guidance | ~$20–30 (journal/chapter) |
-| 66 | Kernberg et al., *Psychodynamic Therapy for Personality Pathology* | ASA T1 | Formulation-focused case conceptualization for personality presentations | ~$80–100 |
 | 67 | Eells (ed.), *Handbook of Psychotherapy Case Formulation* (Guilford, 3rd ed.) | RTA T1 / ASA T1 | Cross-modal case formulation frameworks; updating formulation from session data | ~$80–100 |
 
 ---
@@ -256,10 +239,11 @@
 
 ## Domain 19 — Case Formulation / Longitudinal (ASA-Only Additions)
 
+> **Note (2026-06-21):** Item 120 (Kernberg) removed — psychodynamic procedure manual excluded in Domain 9 review.
+
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
 | 119 | Eells (ed.), *Handbook of Psychotherapy Case Formulation* (3rd ed., Guilford) | ASA T1 | Multi-modal formulation frameworks; structured post-session conceptualization (also listed in Domain 9) | ~$80–100 |
-| 120 | Kernberg et al., *Psychodynamic Therapy for Personality Pathology* | ASA T1 | Formulation-focused for personality presentations (also listed in Domain 9) | ~$80–100 |
 
 ---
 
@@ -299,10 +283,11 @@
 
 ## Domain 23 — Translational Neuroscience (ASA Tier 2, Selective)
 
+> **Note (2026-06-21):** Item 135 (Porges/Dana, *Polyvagal Theory in Therapy*) removed — the clinical adaptation is specifically oriented toward somatic/autonomic-regulation interventions that depend on Somatic Experiencing and Sensorimotor Psychotherapy training; excluded with the somatic cluster.
+
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
 | 134 | van der Kolk, *The Body Keeps the Score* (clinical chapters only) | ASA T2 | Trauma neuroscience at clinical application level; psychoeducation framing | ~$20–30 |
-| 135 | Porges, *The Polyvagal Theory in Therapy* — Deb Dana clinical adaptation | ASA T2 | Translated autonomic science; polyvagal-informed clinical reasoning | ~$40–60 |
 | 136 | LeDoux & Pine — translated fear-circuit science for clinical understanding | ASA T2 | Fear circuit understanding at technique-selection level | ~$20–30 (journal) |
 
 ---
@@ -328,23 +313,25 @@
 
 ## Cost Summary
 
+> **Post-review figures (2026-06-21):** 17 documents removed (items 3–7, 9, 54–58, 61, 62, 64, 66, 120, 135). Estimated savings ~$950–$1,380.
+
 | Category | Approx. Document Count | Estimated Acquisition Cost |
 |---|---|---|
 | Already in corpus (confirmed PDFs) | 3 | $0 |
 | Free / open-access (government publications, open-access journals, instrument guides) | ~25–30 | $0 |
-| Journal articles / book chapters (~$15–30 each) | ~30–35 | $500–$1,000 |
-| Standard textbooks / manuals (~$50–100 each) | ~55–60 | $3,000–$5,500 |
-| Specialty clinical manuals / handbooks (~$80–130 each: Shapiro EMDR, Linehan, Oxford handbooks) | ~10–15 | $900–$1,800 |
-| **Total (all tiers, all pipelines, all documents)** | **~130–145** | **~$4,400–$8,300** |
+| Journal articles / book chapters (~$15–30 each) | ~28–33 | $460–$950 |
+| Standard textbooks / manuals (~$50–100 each) | ~44–49 | $2,200–$4,400 |
+| Specialty clinical manuals / handbooks (~$80–130 each: Linehan, Oxford handbooks) | ~7–10 | $560–$1,300 |
+| **Total (all tiers, all pipelines, retained documents)** | **~112–128** | **~$3,220–$6,650** |
 
-### Phased Budget (from COMPARATIVE_ANALYSIS.md)
+### Phased Budget (revised)
 
 | Phase | Scope | Corpus Acquisition Subtotal |
 |---|---|---|
 | Phase 1 — RTA only, priority modalities | ~30 core manuals (CBT, DBT, PE, CPT, BA, IPT, MI, crisis) | ~$1,500–$3,000 |
-| Phase 2 — Full modality coverage + cultural/LGBTQ+ texts | ~10 additional manuals (EMDR, IFS, somatic, affirmative practice) | ~$400–$800 |
+| Phase 2 — Full modality coverage + cultural/LGBTQ+ texts | ~4–6 additional manuals (affirmative practice, cultural competency RC items only; EMDR/IFS/somatic excluded) | ~$200–$400 |
 | Phase 3 — ASA pipeline | ~25 additional texts (RCTs, meta-analyses, outcome instruments, homework) | ~$1,000–$2,500 |
-| **Total across all phases** | | **~$3,000–$6,500** |
+| **Total across all phases** | | **~$2,700–$5,900** |
 
 ---
 
@@ -372,7 +359,7 @@
 - Cuijpers depression meta-analysis series (most open-access via PubMed)
 - PCL-5, PHQ-9, GAD-7, ORS/SRS, Columbia CAMS, C-SSRS guides
 
-**RC items requiring clinician sign-off before sourcing** — adding these adds ~25–30 documents and ~$1,500–$2,500 to acquisition cost. The five clusters are: EMDR, somatic (SE/SP), IFS, youth-specific, and LGBTQ+/cultural competency texts.
+**RC items requiring clinician sign-off before sourcing** — the open RC clusters after the 2026-06-21 review are: youth-specific texts (TF-CBT, DBT-A, CBT for pediatric OCD, child CBT) and LGBTQ+/cultural competency texts. Adding these adds ~10–15 documents and ~$500–$1,000. The EMDR, somatic (SE/SP), and IFS clusters have been formally declined and removed from scope.
 
 **Lowest cost, high RTA value** — acquire first while specialty manuals are in procurement:
 - Yalom, *The Gift of Therapy* (~$20)
