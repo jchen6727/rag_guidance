@@ -92,7 +92,9 @@ The current schema assumes a single shared DataStore with `corpus_scope` as the 
 
 The `domain` enum in `metadata_schema.json` and the persona keys in `prompt_config.yaml` must remain in sync. A mismatch causes PromptBuilder to silently fall back to `default`. This is currently enforced by convention only.
 
-**Recommended action:** Add a unit test that loads both files and asserts that every value in the `domain` enum has a corresponding persona key (or documents the explicit fallback). This prevents persona coverage gaps from going undetected as new enum values are added.
+**Current intentional gaps:** `psychotherapy_general` and `other` do not have dedicated persona keys — both fall back to `default` by design. `default` is the general psychotherapy supervisor persona and is appropriate for both.
+
+**Recommended action:** Add a unit test that loads both files and asserts every `domain` enum value either has a matching persona key or is explicitly listed as a known `default` fallback. This prevents unintentional coverage gaps from going undetected as new enum values are added.
 
 ---
 

@@ -5,8 +5,9 @@
 #   retrieval_instruction_asa:  Block injected for after-session analysis queries.
 #   citation_format:            Citation instruction appended before the query.
 #   personas:                   Domain-specific persona overrides. Falls back to "default"
-#                               (psychotherapy_general). Keys must match the domain enum
-#                               in config/metadata_schema.json exactly.
+#                               on any miss. "default" covers psychotherapy_general and other
+#                               from the domain enum — those two values have no dedicated key
+#                               by design. All other domain enum values have a matching key.
 #
 # Template variables (replaced by PromptBuilder):
 #   {domain}               - Domain key matched to persona (e.g. "trauma_focused")
