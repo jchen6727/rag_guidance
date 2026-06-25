@@ -367,15 +367,155 @@
       },
       "description": "Outcome instruments referenced, normed, or interpreted in the chunk. Use exact canonical abbreviation (normalize PHQ9 / PHQ 9 / Patient Health Questionnaire-9 to PHQ-9 in _fallback_extraction). Enables routing to specific instrument guidance in analysis_function=outcome_monitoring queries.",
       "default": []
+    },
+
+    "population_focus": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "adult_general",
+          "adult_older",
+          "adolescent",
+          "child",
+          "veteran_military",
+          "first_responder",
+          "perinatal",
+          "lgbtq",
+          "bipoc",
+          "low_income",
+          "chronic_medical_illness",
+          "severe_mental_illness",
+          "forensic",
+          "cross_cultural",
+          "not_reported"
+        ]
+      },
+      "description": "Who the source was developed, adapted, piloted, or intended for. Describes the source's development or validation population — distinct from patient_population, which describes for whom the chunk's evidence or recommendation applies. Used to surface representation gaps: a technique developed exclusively with adult_general samples should be flagged when retrieved for lgbtq or adolescent queries.",
+      "default": ["not_reported"]
+    },
+
+    "source_language": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Language(s) of the source document and any reported translation or cultural adaptation. Use full English language names (e.g. 'English', 'Spanish', 'Mandarin'). A translated document lists both the original and target language. Default assumes English unless stated otherwise in the document.",
+      "default": ["English"]
+    },
+
+    "setting": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "community",
+          "academic_medical_center",
+          "safety_net",
+          "outpatient_clinic",
+          "inpatient",
+          "school_based",
+          "primary_care",
+          "telehealth",
+          "urban",
+          "rural",
+          "suburban",
+          "not_reported"
+        ]
+      },
+      "description": "Setting(s) in which the source was developed or tested. Used to assess ecological validity for treatment-matching queries: a technique validated in an academic medical center may not generalize to a community safety-net clinic. Multiple values are allowed.",
+      "default": ["not_reported"]
+    },
+
+    "adaptation_status": {
+      "type": "string",
+      "enum": [
+        "standard",
+        "culturally_adapted",
+        "resource_constrained",
+        "translated",
+        "not_reported"
+      ],
+      "description": "Whether the source represents a standard protocol, a culturally adapted version, a resource-constrained adaptation (reduced sessions, simplified materials, lay-provider delivery), or a translated document. culturally_adapted and resource_constrained sources may warrant corpus_scope=rta_and_asa even when the base protocol defaults to asa_only. translated sources should also populate source_language with both origin and target languages.",
+      "default": "standard"
+    },
+
+    "missingness": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "What the source does not report, so representation gaps remain visible at retrieval time. Examples: 'no demographic data on study sample', 'no fidelity monitoring reported', 'efficacy data for adolescents excluded', 'adverse event reporting absent'. The retrieval system must surface missingness notes alongside retrieved content when non-empty. Gemini extraction must be explicitly prompted to infer absence, not only extract presence. 0–5 items.",
+      "default": []
+    },
+
+    "presentation_coverage": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "somatic_expression",
+          "spiritual_religious",
+          "migration_acculturation",
+          "discrimination_stress",
+          "family_relational_framing",
+          "general_cultural",
+          "none_reported"
+        ]
+      },
+      "description": "Whether the source addresses somatic expression of distress, spiritual or religious framing, migration or acculturation stress, discrimination-related stress, family or relational framing of problems, or general cultural considerations. Source-level property describing what the document covers — distinct from session_event_tags, which is chunk-level and describes in-session events a passage addresses. Supports routing of culturally specific queries to appropriate sources.",
+      "default": ["none_reported"]
+    },
+
+    "study_type": {
+      "type": ["string", "null"],
+      "enum": [
+        "randomized_controlled_trial",
+        "quasi_experimental",
+        "open_trial",
+        "meta_analysis",
+        "systematic_review",
+        "qualitative_study",
+        "case_series",
+        "single_case_experimental",
+        "case_report",
+        "normative_development",
+        "theoretical_position_paper",
+        "clinical_manual",
+        "guideline_document",
+        null
+      ],
+      "description": "Overall study design of the source document, set once per document from the source's primary design. Distinct from evidence_base, which is chunk-level and describes the epistemological type of content in a specific passage. clinical_manual and guideline_document apply where a formal study design is not applicable.",
+      "default": null
+    },
+
+    "sample_size": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Total study sample size, where applicable. Null if not reported or not applicable (clinical manuals, theoretical texts, guidelines). For meta-analyses, record the total pooled N across included studies. Used jointly with study_type and patient_population to assess evidence weight in treatment-matching queries.",
+      "default": null
+    },
+
+    "intended_use_context": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "in_session_support",
+          "assessment",
+          "education",
+          "supervision",
+          "self_study"
+        ]
+      },
+      "description": "High-level intended use context of the source: in_session_support (quick reference during or immediately before sessions), assessment (scoring, interpretation, or administration guidance), education (psychoeducation or training material), supervision (case consultation or trainee development), self_study (extended reading not appropriate for real-time retrieval). Distinct from doc_type (what the document is) and target_audience (who it is written for). Used to route ASA queries to sources matched to the query's functional context.",
+      "default": []
     }
 
   },
   "additionalProperties": false,
   "notes": {
-    "vertex_ai_search": "String and integer scalar fields are registered as filterable attributes in the DataStore schema. Array fields (therapeutic_modality, clinical_presentation, session_event_tags, analysis_function, patient_population, risk_dimension_tags, outcome_measure_tags, clinical_caution, technique_tags) must be explicitly registered as filterable attributes (type 'key' or 'text') in setup_vertex_search.py for retrieval filter use. Schema changes require purge_datastore.py --confirm followed by full re-ingestion. See config/ISSUES.md for DataStore registration checklist.",
+    "vertex_ai_search": "String and integer scalar fields are registered as filterable attributes in the DataStore schema. Array fields (therapeutic_modality, clinical_presentation, session_event_tags, analysis_function, patient_population, risk_dimension_tags, outcome_measure_tags, clinical_caution, technique_tags, population_focus, setting, presentation_coverage, intended_use_context, source_language) must be explicitly registered as filterable attributes (type 'key' or 'text') in setup_vertex_search.py for retrieval filter use. missingness is informational only and does not require filterable registration. Schema changes require purge_datastore.py --confirm followed by full re-ingestion. See config/ISSUES.md for DataStore registration checklist.",
     "domain_vs_modality": "domain is a document-level property assigned from the source's primary orientation (set once per document). therapeutic_modality is a chunk-level property extracted from passage content and may differ from the document's domain. This distinction must appear in the Gemini extraction prompt to prevent inconsistent tagging.",
     "routing_safety": "corpus_scope=asa_only is a correctness constraint on the RTA searcher, not a soft signal. target_audience=patient is a hard exclusion from all retrieval paths except analysis_function=homework_resource. Both filters must be implemented as pre-filters in the searcher, not as ranking adjustments.",
-    "recommended_change_items": "Fields added from RECOMMENDED CHANGE blocks in corpus notes (included in this schema): UP in therapeutic_modality; dissociative_disorders/health_anxiety/hoarding/bfrb/autism_spectrum/perinatal in clinical_presentation; shame_activation/somatic_activation/therapist_self_disclosure/avoidance_safety_behavior/minority_stress_disclosure/cultural_mismatch/premature_termination_signal/grief_loss_activation in session_event_tags; pre_intake_consultation in session_phase; use_with_caution/contraindicated/empirically_derived in practice_recommendation_level; clinical_caution/training_level_required/risk_dimension_tags fields; termination_planning in analysis_function; open_ended in time_horizon. SE and SP from the original RECOMMENDED CHANGE blocks were removed in the CBT/DBT/IPT scope pruning pass. Review config/ISSUES.md for items requiring corpus acquisition decisions.",
+    "representation_and_implementation_fields": "population_focus, source_language, setting, adaptation_status, missingness, and presentation_coverage describe source-level provenance and representation gaps. study_type, sample_size, and intended_use_context describe source-level methodological and functional context. All nine fields are document-level properties set once per document, distinct from chunk-level fields (evidence_base, patient_population) which describe individual passage content. See config/ISSUES.md I-16 through I-22 for extraction and routing guidance.",
+    "recommended_change_items": "Fields added from RECOMMENDED CHANGE blocks in corpus notes (included in this schema): UP in therapeutic_modality; dissociative_disorders/health_anxiety/hoarding/bfrb/autism_spectrum/perinatal in clinical_presentation; shame_activation/somatic_activation/therapist_self_disclosure/avoidance_safety_behavior/minority_stress_disclosure/cultural_mismatch/premature_termination_signal/grief_loss_activation in session_event_tags; pre_intake_consultation in session_phase; use_with_caution/contraindicated/empirically_derived in practice_recommendation_level; clinical_caution/training_level_required/risk_dimension_tags fields; termination_planning in analysis_function; open_ended in time_horizon. SE and SP from the original RECOMMENDED CHANGE blocks were removed in the CBT/DBT/IPT scope pruning pass. Representation and implementation fields added from proposed_changes_metadata_schema.md (2026-06-25): population_focus, source_language, setting, adaptation_status, missingness, presentation_coverage, study_type, sample_size, intended_use_context. Review config/ISSUES.md for items requiring corpus acquisition decisions.",
     "removed_fields": "Removed from prior schema: entities (superseded by technique_tags), evidence_level GRADE A/B/C/D (superseded by practice_recommendation_level). Update ingestion/metadata_gen.py _fallback_extraction() to not populate these fields."
   }
 }

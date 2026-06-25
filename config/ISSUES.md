@@ -193,3 +193,91 @@ The current schema enumerates specific instrument abbreviations in `outcome_meas
 **Current decision:** Use the enum (forces schema update discipline). The normalization logic in `_fallback_extraction()` handles the most common Gemini variant forms. If a novel instrument appears, add it to the enum and re-register the schema.
 
 **Instruments not currently in the enum that may appear in corpus:** YSR/CBCL (youth), PSS (Perceived Stress Scale), DERS (Difficulties in Emotion Regulation), RRS (Ruminative Response Scale), PTCI (Posttraumatic Cognitions Inventory). Add as needed.
+
+---
+
+## I-16 [CODE] `population_focus` vs. `patient_population` disambiguation in extraction prompt
+
+`population_focus` describes who the source was developed, adapted, or piloted for. `patient_population` describes who the chunk's evidence or recommendation applies to. These will often share values but are conceptually distinct: a standard adult CBT manual may have `population_focus=["adult_general"]` and `patient_population=["adult_general"]`, while a culturally adapted version developed in partnership with a BIPOC community clinic would have `population_focus=["bipoc"]` even if the base protocol's stated applicability (`patient_population`) is broader.
+
+Without explicit disambiguation in the Gemini extraction prompt, the model will conflate these fields. The prompt must include: "population_focus = who participated in developing or validating this source; patient_population = who the evidence in this passage applies to."
+
+---
+
+## I-17 [CODE] `missingness` inference requires explicit Gemini prompt guidance
+
+`missingness` captures what the source does not report — demographic data, fidelity monitoring, adverse events, population-specific subgroup analyses. Inferring absence is inherently harder than extracting presence, and without explicit instruction Gemini will leave this field empty.
+
+**Action:** Add a dedicated instruction block to the extraction prompt: "Report what is notably absent from this source. Examples: 'no demographic breakdown of study sample', 'no fidelity monitoring reported', 'efficacy data for adolescents not reported', 'no adverse event data', 'cultural adaptation process not described'." Without this, `missingness` will default to `[]` for all documents and lose its value as a representation-gap signal.
+
+---
+
+## I-18 [DESIGN] `adaptation_status=culturally_adapted` and `corpus_scope` routing interaction
+
+The `adaptation_status` field description notes that `culturally_adapted` and `resource_constrained` sources may warrant `corpus_scope=rta_and_asa` even when the base protocol defaults to `asa_only`. This override is not automatically enforced — it requires a curation rule or code decision.
+
+**Options:**
+1. At ingest time, if `adaptation_status in ["culturally_adapted", "resource_constrained"]`, override `corpus_scope` to `rta_and_asa` regardless of `doc_type` default.
+2. Flag for human curation review rather than automatic override.
+3. Leave the description as advisory only; curators set `corpus_scope` manually.
+
+**Decision required before ingesting adapted materials.** If option 1 is chosen, implement in `ingestion/metadata_gen.py` as a post-extraction override after Gemini assignment.
+
+---
+
+## I-19 [BLOCKER] New array fields require Vertex AI Search filterable registration
+
+The following array fields added in the 2026-06-25 schema update must be registered as filterable attributes in `scripts/setup_vertex_search.py` before DataStore registration. Without registration these fields are stored but cannot be used as retrieval filters:
+
+- `population_focus`
+- `setting`
+- `presentation_coverage`
+- `intended_use_context`
+- `source_language`
+
+`missingness` is informational only and does not require filterable registration.
+
+**Action:** Audit `setup_vertex_search.py` and add these five fields alongside the existing array fields from I-02. The full filterable array field list is now: therapeutic_modality, clinical_presentation, session_event_tags, analysis_function, patient_population, risk_dimension_tags, outcome_measure_tags, clinical_caution, technique_tags, population_focus, setting, presentation_coverage, intended_use_context, source_language.
+
+---
+
+## I-20 [CODE] `presentation_coverage` and `session_event_tags` must be disambiguated in extraction prompt
+
+`presentation_coverage` is a source-level property describing what the document addresses (e.g. `discrimination_stress`, `migration_acculturation`). `session_event_tags` is a chunk-level property describing in-session events a specific passage addresses (e.g. `minority_stress_disclosure`, `cultural_mismatch`).
+
+The values overlap conceptually: a source covering `discrimination_stress` in `presentation_coverage` will likely have chunks tagged `minority_stress_disclosure` in `session_event_tags`. Without explicit disambiguation, Gemini may assign chunk-level event tags based on the document's overall coverage, or omit `presentation_coverage` because the same content is already captured in `session_event_tags`.
+
+**Action:** Add to the extraction prompt: "presentation_coverage = what cultural or contextual dimensions does the overall source document address; session_event_tags = what specific in-session event does this individual chunk directly address." Both fields should be populated independently.
+
+---
+
+## I-21 [CODE] `study_type` vs. `evidence_base` disambiguation in extraction prompt
+
+`study_type` is a document-level field set once from the source's primary study design. `evidence_base` is chunk-level and can vary within a document: a chunk from an RCT paper may be `evidence_base=rct_primary` while a chunk in the same paper summarizing prior literature might be `evidence_base=meta_analytic`.
+
+Without disambiguation, Gemini may copy `study_type` into `evidence_base` for every chunk (collapsing meaningful variation) or set `study_type` differently per chunk (incorrect; it is fixed at the document level).
+
+**Action:** Extraction prompt must state: "study_type is fixed at the document level — it does not change between chunks. evidence_base describes the epistemological character of the specific passage being extracted."
+
+---
+
+## I-22 [BLOCKER] New fields require re-extraction for existing corpus documents
+
+The three existing corpus documents (Boswell & Constantino *Deliberate Practice in CBT*, Foa et al. *PE for PTSD*, CBT for Social Phobia) have not been tagged with any of the nine representation or implementation fields added in the 2026-06-25 schema update. `CorpusScanner.scan()` skips documents already recorded in the manifest via `is_processed()`.
+
+**Action:** Either run `batch_ingest.py --force` for each existing file to trigger re-extraction, or set the new fields manually via curator review and delete-then-reimport. Re-extraction also requires the DataStore purge and re-registration mandated by I-01 for any schema change, so this can be combined with the next full re-ingest cycle.
+
+Approximate expected values for manual curation:
+- Boswell & Constantino: `study_type=clinical_manual`, `population_focus=["adult_general"]`, `setting=["academic_medical_center"]`, `intended_use_context=["supervision", "self_study"]`
+- Foa et al. PE for PTSD: `study_type=clinical_manual`, `population_focus=["adult_general", "veteran_military"]`, `setting=["academic_medical_center"]`, `intended_use_context=["in_session_support"]`
+- CBT for Social Phobia: `study_type=clinical_manual`, `population_focus=["adult_general"]`, `setting=["academic_medical_center"]`, `intended_use_context=["in_session_support"]`
+
+---
+
+## I-23 [DESIGN] `evidence_level` from proposed_changes_metadata_schema.md — scope clarification needed
+
+`proposed_changes_metadata_schema.md` listed "evidence level" as an implementation field alongside study type and sample size. This was interpreted as already covered by two existing fields: `practice_recommendation_level` (recommendation strength and polarity: strongly_recommended through contraindicated) and the new `study_type` (study design type). A GRADE A/B/C/D field was explicitly removed in the 2026-06-24 migration as not appropriate for the psychotherapy evidence context.
+
+**If a distinct field was intended** — for example, a formal APA Division 12 evidence category (Well-Established, Probably Efficacious, Possibly Efficacious) or a NICE grade — add it to the schema and log a new entry here. The current schema does not prevent this addition; it would be added to the enum alongside `practice_recommendation_level` or as a separate field.
+
+**No action required unless the original intent was a field not covered by `practice_recommendation_level` or `study_type`.**
