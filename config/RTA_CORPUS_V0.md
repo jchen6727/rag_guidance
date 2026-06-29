@@ -1,89 +1,113 @@
-# Initial Rough (v0) of proposed Real Time Analysis (RTA) Corpus
+# Initial Rough (v0) of Proposed Real Time Analysis (RTA) Corpus
 
 Author: James Chen (Backend AI/LLM Architect)
 
-## RE: Lack of Clinical SME in Generating this Document (Most Important!)
+---
 
-Except for Vikki's recommendations, our tiers, modality organization, searches were conducted agnostic to:
+## How to Read This Document
 
-1. what occurs during a clinical session, including what is appropriate reasoning pre session vs. in session vs. after session.
+This document proposes an initial library of clinical texts (the **corpus**) to support an AI-assisted tool called **Real Time Analysis (RTA)**. RTA is designed to surface relevant clinical knowledge to clinicians in real time during psychotherapy sessions.
 
-2. the ability of these texts to span the breadth and depth of CBT, DBT and IPT care.
+**What we are asking of you:** Please review the document list and tier assignments below. Your clinical expertise is authoritative here — we need you to tell us which texts to add, remove, or reclassify. We have not been able to evaluate these materials from a clinical practice standpoint and are relying on your team to do so.
 
-3. the availability of these texts to clinician-academics.
+**Key terms used in this document:**
 
-Because of this, we anticipate the majority, or all of this list will be changed as we clarify with your team both what the context should contain, when it should be retrieved, etc. We are reliant on your team to add/remove documents.
+| Term | Plain-language meaning |
+|---|---|
+| **Corpus** | The complete library of clinical texts the AI draws from when providing guidance |
+| **Corpus ingestion** | The technical process of reading, analyzing, and indexing a document so the AI can search and retrieve its contents |
+| **Metadata / Tags** | Labels attached to individual sections of a text (e.g., "CBT," "depression," "crisis_escalation") that tell the AI what clinical content each section covers |
+| **RAG (Retrieval-Augmented Generation)** | The approach RTA uses: rather than relying solely on built-in AI knowledge, it retrieves relevant passages from the corpus in real time to ground its responses |
+| **Tier** | A priority category indicating how much processing time and review effort we invest in a given document |
 
-Instead, this list is simply used as an example organization and tier structure that we will be using to help determine our approach to corpus ingestion (see notes)
+---
 
-## RE: The Tier Structure.
+## RE: Lack of Clinical SME in Generating This Document (Most Important)
 
-We are utilizing a tiered structure to handle corpus, this allows our backend team to allocate the necessary time and budget to any document, with Tier 1 and Tier 2 documents being considered as documents necessary for a functioning RAG assistant, with differing anticiated budgets for tier 1 (70%) and tier 2 (20-30%). Tier 3 documents will be considered as additional documents for corpus ingestion if time is available.
+Except for Vikki's recommendations, our tier assignments, modality organization, and document searches were conducted without clinical expertise — specifically, without knowledge of:
 
-### Tier 1 documents:
+1. What occurs during a clinical session, including what reasoning is appropriate pre-session vs. in-session vs. after session.
 
-* Encompass the "Core Knowledge"/"Foundational Framework" of any large metadata domain (currently, we are using the modalities of CBT, DBT and IPT)
-* Spans interventional techniques and presentations *across* any metadata domain.
-* I.E. a comprehensive guide to CBT/DBT/IPT. Something you would recommend to a prospective clinician "buy/read this first".
+2. The degree to which these texts span the breadth and depth of CBT, DBT, and IPT care.
 
-Mechanistically, we differentiate these because we anticipate that ingestion of these will generate many metadata tags (discrete relevant sections), so we will spend >70% of our budget ensuring these are tagged and indexed correctly due to the value/breadth/complexity of the document.
+3. The practical availability of these texts to clinician-academics.
 
-Likely we would have only very few ( foundational ) tier 1 documents, possibly 1 or 2 texts per large metadata domain.
+**We anticipate the majority — or all — of this list will change** as we work with your team to clarify what the corpus should contain and when content should be retrieved. We are relying on your team to add, remove, and reclassify documents.
 
-### Tier 2 documents:
+This list exists only as a working example of the organizational structure we are proposing, not as a clinical recommendation.
 
-* Encompass necessary "Supplemental Knowledge" for any large metadata domain.
-* May have interventional techniques related to a specific sub-group of presentations.
-* I.E. CBT for Anxiety. 
-Something that you would recommend to a prospective clinician looking at a particular vignette to "buy/read this"
+---
 
-We anticipate less tag generation due to the specificity of the text, and will likely spend 20-30% of our budget on these documents. 
+## RE: The Tier Structure
 
-We can budget in more tier 2 documents, possibly around 3 to 5 that cover sub-groups within a large metadata domain, since their metadata and ingestion will be more straightforward due to reduced scope of the document
+We use a tiered system to allocate how much time and processing effort we invest in each document. Think of it as analogous to how a training curriculum might organize its reading list: some texts are foundational and essential, others are important supplements, and some are specialized references used only as needed.
 
-Of note, Tier 2 documents do not mean that the information contained within is of "lesser importance" than Tier 1, just that their reduced scope means that we anticipate the ingestion method will be easier due to the reduced scope.
+**Tier 1 and Tier 2 documents are considered necessary for a functioning RTA system.** Tier 3 documents will be considered if time and resources permit.
 
-### Tier 3 documents:
+### Tier 1 — Foundational Texts
 
-* Encompass highly specialized knowledge within a large metadata domain that may be outside the knowledge scope of a practitioner.
-* May provide answers to a very specific set of individual problems.
+* Cover the core knowledge and conceptual framework of a primary treatment modality (CBT, DBT, or IPT)
+* Address interventional techniques and presentations *across* the modality as a whole
+* Think of these as the text you would recommend a prospective clinician read first — a comprehensive guide to CBT, DBT, or IPT
 
-We may briefly review these documents and their ingestion, but may move to the after session analysis or drop entirely.
+We invest the majority of our processing budget (~70%) on Tier 1 documents. Because they are broad, dense, and foundational, accurate indexing of these texts is critical — the AI draws on them constantly. We expect very few Tier 1 documents per modality (possibly 1–2 per treatment domain).
+
+### Tier 2 — Supplemental Texts
+
+* Cover necessary supplemental knowledge within a treatment modality
+* May focus on a specific subgroup of patients or presentations (e.g., CBT for Anxiety specifically)
+* Think of these as the text you would recommend to a clinician looking at a specific clinical vignette
+
+We invest a smaller portion of our budget (~20–30%) on Tier 2 documents. Their narrower focus makes indexing more straightforward. We can accommodate more of them — roughly 3–5 per modality subgroup.
+
+> **Note:** Tier 2 does not mean the clinical content is less important. It reflects the narrower scope of the document, which simplifies — but does not reduce the value of — our processing of it.
+
+### Tier 3 — Specialized References
+
+* Cover highly specialized knowledge within a modality that may fall outside the everyday scope of a generalist clinician
+* May address a very specific set of clinical problems
+
+We may process these briefly or defer them to post-session analysis contexts. We may also drop them entirely depending on available time and resources.
+
+---
 
 ## RE: Culturally Responsive Care
 
-I am treating Vikki as SME for corpus/schema for this section of the corpus. She has recommended two books --
+Vikki is serving as our clinical SME for corpus and schema in this domain. She has recommended two texts:
 
-1. CA-CBT for Black Populations: A Manual for Mental Health Practitioners (CAMH, 2024)
+1. *CA-CBT for Black Populations: A Manual for Mental Health Practitioners* (CAMH, 2024)
 
-2. Cultural Adaptations of Evidence-Based Interventions for Latinx Populations (National Hispanic and Latino MHTTC, 2022)
+2. *Cultural Adaptations of Evidence-Based Interventions for Latinx Populations* (National Hispanic and Latino MHTTC, 2022)
 
-And has additional schema notes for these. Since she is spearheading this in both theory and schema implementation, they will be essentially Tier 1 documents.
+She also has additional schema notes for these texts. Because she is leading both the theoretical framing and the implementation of this area, these texts will be treated as Tier 1 documents.
 
 ---
 
 # TIER 1 Recommendations
 
 ## Therapeutic Modalities
+
 ### All Modality Reference
 | # | Document | Tier | Utility | Est. Acquisition |
-|---|---|---|---|---| 
-| 1 | APA Handbook of Psychiatry | Tier 1 | Chapters across modalities, presentations and interventional events | ~$400
+|---|---|---|---|---|
+| 1 | APA Handbook of Psychiatry | Tier 1 | Chapters spanning multiple modalities, presentations, and interventional events | ~$400 |
 
-### CBT + sub-domains (PE, DBT, ACT)
+### CBT and Sub-Domains (PE, DBT, ACT)
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
-| 1 | Boswell & Constantino, *Deliberate Practice in CBT* (APA)| Tier 1 | Therapist skill refinement; annotated technique gaps; deliberate practice protocols |  ✓ IN  |
+| 1 | Boswell & Constantino, *Deliberate Practice in CBT* (APA) | Tier 1 | Therapist skill refinement; annotated technique gaps; deliberate practice protocols | ✓ IN |
 | 2 | Linehan, *DBT Skills Training Manual* (2nd ed., Guilford) — Clinician's Edition | Tier 1 | Core DBT skills procedures: chain analysis, diary card review, distress tolerance, emotion regulation | ~$80–100 |
-| 3 | Hayes, Strosahl & Wilson, *Acceptance and Commitment Therapy* — Practitioner's Guide | Tier 1 | Core ACT procedures; defusion, values work, committed action in session | ~$70–90 |
-| 4 | *Thousand Voices of Trauma* - Annotated Texts | Tier 1 | CBT? Session Transcripts |  ✓ IN  |
+| 3 | Hayes, Strosahl & Wilson, *Acceptance and Commitment Therapy* — Practitioner's Guide | Tier 1 | Core ACT procedures: defusion, values work, committed action in session | ~$70–90 |
+| 4 | *Thousand Voices of Trauma* — Annotated Texts | Tier 1 | CBT session transcripts with clinical annotation | ✓ IN |
 
 ### IPT
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
-| 1 | Weissman, Markowitz & Klerman, *Comprehensive Guide to Interpersonal Psychotherapy* | Tier 1 | Full IPT reference; session structure, problem area work, termination procedures | ~$70–90 |
+| 1 | Weissman, Markowitz & Klerman, *Comprehensive Guide to Interpersonal Psychotherapy* | Tier 1 | Full IPT reference: session structure, problem area work, termination procedures | ~$70–90 |
 
-## Cross Modality Techniques
+---
+
+## Cross-Modality Techniques
 
 ### Crisis Intervention / Safety
 | # | Document | Tier | Utility | Est. Acquisition |
@@ -93,32 +117,34 @@ And has additional schema notes for these. Since she is spearheading this in bot
 ### Motivational Interviewing
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
-| 1 | Miller & Rollnick, *Motivational Interviewing* (3rd ed., Guilford) | Tier 1 / Tier 2| Core MI procedures; OARS, rolling with resistance, evoking change talk | ~$60–80 |
+| 1 | Miller & Rollnick, *Motivational Interviewing* (3rd ed., Guilford) | Tier 1 / Tier 2 | Core MI procedures: OARS, rolling with resistance, evoking change talk | ~$60–80 |
 
-### In-session clinical reasoning.
+### In-Session Clinical Reasoning
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
-| 1 | McWilliams, *Psychoanalytic Diagnosis* (2nd ed.) | Tier 1 / Tier 2| Character structure and defense mechanism recognition; in-session clinical reasoning | ~$60–80 |
+| 1 | McWilliams, *Psychoanalytic Diagnosis* (2nd ed.) | Tier 1 / Tier 2 | Character structure and defense mechanism recognition; in-session clinical reasoning | ~$60–80 |
 
-### Alliance, Rupture & Repair 
+### Alliance, Rupture & Repair
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
-| 1 | Safran & Muran, *Negotiating the Therapeutic Alliance* | Tier 1 / Tier 2| Rupture/repair transcripts with annotation; confrontation and withdrawal rupture procedures | ~$50–70 |
+| 1 | Safran & Muran, *Negotiating the Therapeutic Alliance* | Tier 1 / Tier 2 | Rupture/repair transcripts with clinical annotation; confrontation and withdrawal rupture procedures | ~$50–70 |
 
+---
 
 # TIER 2 Recommendations
-### CBT + sub-domains (PE, DBT, ACT)
+
+### CBT and Sub-Domains (PE, DBT, ACT)
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
-| 1 | Foa et al., *Prolonged Exposure Therapy for PTSD* — Therapist Guide (Oxford, 2022) | Tier 2 | Core PE protocol; step-by-step imaginal/in-vivo procedures; session-moment resolution |  ✓ IN  |
-| 2 | *Comprehensive CBT for Social Phobia — Treatment Manual* | Tier 2 | Session structure, cognitive restructuring scripts for social anxiety | ✓ IN  |
+| 1 | Foa et al., *Prolonged Exposure Therapy for PTSD* — Therapist Guide (Oxford, 2022) | Tier 2 | Core PE protocol: step-by-step imaginal and in-vivo exposure procedures | ✓ IN |
+| 2 | *Comprehensive CBT for Social Phobia — Treatment Manual* | Tier 2 | Session structure; cognitive restructuring scripts for social anxiety | ✓ IN |
 | 3 | Linehan, *Cognitive-Behavioral Treatment of Borderline Personality Disorder* — case material chapters | Tier 2 | Annotated case material for BPD; in-session technique illustration | ~$80–100 (if not acquired in Domain 2) |
-| 4 | Rudd et al., *Brief Cognitive Behavioral Therapy for Suicide Prevention* | Tier 2 | CBT-SP procedures; crisis management within CBT frame | ~$60–80 |
+| 4 | Rudd et al., *Brief Cognitive Behavioral Therapy for Suicide Prevention* | Tier 2 | CBT-SP procedures; crisis management within a CBT treatment frame | ~$60–80 |
 
 ### IPT
 | # | Document | Tier | Utility | Est. Acquisition |
 |---|---|---|---|---|
-| 1 | Klerman et al., *Interpersonal Psychotherapy of Depression* (IPT manual) | Tier 2 | Core IPT procedures; grief, role disputes, role 
+| 1 | Klerman et al., *Interpersonal Psychotherapy of Depression* (IPT manual) | Tier 2 | Core IPT procedures: grief, role disputes, role transitions *(entry incomplete — please verify and expand)* | — |
 
 ### Motivational Interviewing
 | # | Document | Tier | Utility | Est. Acquisition |
