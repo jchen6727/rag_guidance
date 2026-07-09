@@ -24,8 +24,9 @@ import logging
 import sys
 from pathlib import Path
 
+from google.api_core import retry as api_retry
+from google.api_core.exceptions import AlreadyExists, DeadlineExceeded, ServiceUnavailable
 from google.cloud import discoveryengine_v1beta as discoveryengine
-from google.api_core.exceptions import AlreadyExists
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import settings
@@ -33,6 +34,16 @@ from config.schema_loader import SchemaVocabulary
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+_LRO_RPC_TIMEOUT = 300  # seconds for the initial RPC that starts a long-running operation
+_LRO_RESULT_TIMEOUT = 600  # seconds to wait for the LRO (whole process) to complete -> 300 (5 minutes) increased to 600 (10 minutes)
+_RETRY_TRANSIENT = api_retry.Retry(
+    predicate=api_retry.if_exception_type(DeadlineExceeded, ServiceUnavailable),
+    initial=2.0,
+    maximum=30.0,
+    multiplier=2.0,
+    deadline=300.0, # retry extended 120 -> 300 in case GCP scale up
+)
 
 
 def create_datastore(dry_run: bool = False) -> str:
@@ -76,8 +87,10 @@ def create_datastore(dry_run: bool = False) -> str:
             parent=parent,
             data_store=datastore,
             data_store_id=settings.vertex_search_datastore_id,
+            timeout=_LRO_RPC_TIMEOUT,
+            retry=_RETRY_TRANSIENT,
         )
-        result = operation.result(timeout=120)
+        result = operation.result(timeout=_LRO_RESULT_TIMEOUT)
         logger.info("DataStore created: %s", result.name)
         return result.name
     except AlreadyExists:
@@ -146,7 +159,11 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
     )
 
     try:
-        client.update_schema(schema=schema)
+        client.update_schema(
+            schema=schema,
+            timeout=_LRO_RPC_TIMEOUT,
+            retry=_RETRY_TRANSIENT,
+        )
         logger.info("Schema updated: %s", schema_name)
     except Exception:
         try:
@@ -154,6 +171,8 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
                 parent=datastore_name,
                 schema=schema,
                 schema_id="default_schema",
+                timeout=_LRO_RPC_TIMEOUT,
+                retry=_RETRY_TRANSIENT,
             )
             logger.info("Schema created: %s", schema_name)
         except AlreadyExists:
@@ -204,8 +223,10 @@ def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
             parent=parent,
             engine=engine,
             engine_id=settings.vertex_search_engine_id,
+            timeout=_LRO_RPC_TIMEOUT,
+            retry=_RETRY_TRANSIENT,
         )
-        result = operation.result(timeout=120)
+        result = operation.result(timeout=_LRO_RESULT_TIMEOUT)
         logger.info("Search Engine created: %s", result.name)
         return result.name
     except AlreadyExists:

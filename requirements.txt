@@ -22,6 +22,8 @@ google-cloud-storage>=2.16.0
 google-cloud-documentai>=2.27.0
 # Document AI OCR — optional fallback for scanned PDFs
 
+google-cloud-resource-manager
+# Sanity check for google cloud projects (validate proper config before starting tasks)
 # ---------------------------------------------------------------------------
 # PDF Extraction
 # ---------------------------------------------------------------------------

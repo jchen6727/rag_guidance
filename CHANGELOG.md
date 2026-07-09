@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-07-09 (b)
+
+### Fixed
+
+- **`scripts/setup_vertex_search.py`** — `create_data_store()` and `create_engine()` failed with `google.api_core.exceptions.DeadlineExceeded: 504` because the initial gRPC calls used the library's default timeout (~60 s), which is too short for Vertex AI Search LRO-initiating RPCs on cold starts or under load. Added explicit `timeout=300` and `google.api_core.retry.Retry` with exponential backoff (2 s → 30 s, 120 s deadline) on `DeadlineExceeded` and `ServiceUnavailable` to all three provisioning steps (`create_data_store`, `update_schema`/`create_schema`, `create_engine`). Also raised `operation.result()` timeout from 120 s to 300 s for `create_data_store` and `create_engine`.
+- **`ingestion/indexer.py`** — applied the same `timeout` + `Retry` treatment to `import_documents()`, `get_operation()` (LRO polling), `delete_document()`, and `list_documents()`, which were all using default gRPC deadlines and had no retry logic for transient failures. These calls are exercised by `scripts/batch_ingest.py` and `scripts/purge_datastore.py`.
+
+---
+
 ## 2026-07-09
 
 ### Added
