@@ -1,5 +1,7 @@
 # Problem List — Complex Elements for Human Review
 
+> **Staleness notice.** This is the original **pre-migration (generic biomedical)** issues list. It is largely superseded by `config/ISSUES.md`, which reflects the psychotherapy CBT/DBT/IPT schema. The chunking (P1), citation (P2), extraction (P4), and operational (P5) discussions remain domain-agnostic and valid; the metadata/vocabulary examples in **P3** (e.g. `domain = "cardiology"`, GRADE `evidence_level`) are obsolete. See `DISCREPANCIES.md`.
+
 Issues are ordered by priority: combination of implementation risk, human judgment required, and downstream impact if gotten wrong.
 
 ---

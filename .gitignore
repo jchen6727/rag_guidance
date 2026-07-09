@@ -224,3 +224,5 @@ journal/
 .env.project
 
 .DS_Store
+
+*.html

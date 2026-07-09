@@ -2,7 +2,7 @@
 
 ## Overview
 
-An end-to-end pipeline that ingests technical/clinical/scientific PDFs, generates AI-guided metadata via Gemini, indexes into Vertex AI Search, and produces expert-persona responses with citations.
+An end-to-end pipeline that ingests **psychotherapy** clinical/scientific PDFs (scoped to CBT/DBT/IPT practice), generates AI-guided metadata via Gemini, indexes into Vertex AI Search, and produces expert-persona guidance with citations. It serves two modes: **RTA** (real-time, in-session) and **ASA** (after-session analysis). The authoritative schema and persona set live in `config/metadata_schema.json` and `config/prompt_config.yaml`; see `BOOTSTRAP.md` for the current source-of-truth reading order.
 
 ---
 
@@ -46,7 +46,12 @@ An end-to-end pipeline that ingests technical/clinical/scientific PDFs, generate
 ```
 rag_guidance/
 ├── corpus/                         # Drop PDFs here for ingestion
-├── prompt/                         # Prompt template files
+├── prompt/                         # (currently empty)
+│
+├── rta_prompt/                     # RTA/ASA pipelines + models (stub)
+│   ├── models.py                   # PatientContext, RTAResponse, ASAResponse, ...
+│   ├── rta/                        # event_detector.py, searcher.py, pipeline.py
+│   └── asa/                        # searcher.py, pipeline.py
 │
 ├── ingestion/
 │   ├── __init__.py
@@ -120,7 +125,7 @@ Calls the Discovery Engine Data Connector to import the chunk JSONL into an unst
 ### 7. Retrieval (`retrieval/searcher.py`)
 Wraps Vertex AI Search `SearchService` with:
 - Semantic + keyword hybrid search
-- Metadata filter expressions (e.g., `domain = "cardiology"`)
+- Metadata filter expressions (e.g., `domain = "cognitive_behavioral"`, `corpus_scope != "asa_only"`)
 - Configurable top-K and minimum relevance score
 
 ### 8. Response Generator (`generation/response_gen.py`)
@@ -136,7 +141,6 @@ Assembles a prompt using expert persona template + retrieved chunks, then calls 
 | Vertex AI / Gemini | `google-generativeai>=0.7` or `google-cloud-aiplatform>=1.50` | Metadata extraction, response generation |
 | Google Cloud Storage | `google-cloud-storage>=2.14` | PDF + chunk JSONL staging |
 | Google Document AI | `google-cloud-documentai>=2.24` | Scanned PDF OCR fallback |
-| Watchdog | `watchdog>=4.0` | Local filesystem event monitoring (optional; only needed for the observer-based path) |
 | pdfplumber | `pdfplumber>=0.11` | Primary PDF text + table extraction |
 | sentence-transformers | `sentence-transformers>=3.0` | Semantic chunking embeddings |
 | Pydantic | `pydantic>=2.0` | Config and metadata model validation |
@@ -152,52 +156,44 @@ Assembles a prompt using expert persona template + retrieved chunks, then calls 
 
 ## Metadata Schema (canonical fields)
 
-Defined in `config/metadata_schema.json`, generated per-chunk by Gemini:
+**`config/metadata_schema.json` is authoritative** — it defines ~30 psychotherapy-oriented fields and is the single source of truth for Gemini extraction and DataStore registration. The table below is a representative subset only; consult the JSON for the full field list, enums, and defaults.
 
 | Field | Type | Description |
 |---|---|---|
 | `doc_id` | string | SHA-256 hash of source PDF |
 | `source_file` | string | Original filename |
 | `title` | string | Inferred document title |
-| `domain` | string | Specialty domain (e.g., `cardiology`, `oncology`) |
-| `subdomain` | string | Narrower topic |
-| `doc_type` | enum | `textbook`, `clinical_guideline`, `research_paper` |
-| `chapter` | string | Chapter or section name |
-| `page_start` | int | First page of chunk |
-| `page_end` | int | Last page of chunk |
+| `domain` | enum | Document-level orientation (e.g., `cognitive_behavioral`, `dialectical_behavior`, `trauma_focused`, `interpersonal`) |
+| `subdomain` | string | Narrower topic (free text) |
+| `doc_type` | enum | e.g., `treatment_manual`, `session_transcript`, `clinical_worksheet`, `rct_paper`, `front_matter` |
+| `therapeutic_modality` | enum[] | Chunk-level modality tags (CBT/DBT/IPT scope): `CBT`, `DBT`, `CPT`, `PE`, `IPT`, … |
+| `corpus_scope` | enum | Hard RTA/ASA routing field: `rta_and_asa` (default) or `asa_only` |
+| `session_event_tags` | enum[] | In-session events (primary RTA retrieval trigger) |
+| `analysis_function` | enum[] | Post-session functions (primary ASA routing field) |
+| `practice_recommendation_level` | enum? | Strength/polarity of recommendation (replaces GRADE `evidence_level`) |
+| `page_start` / `page_end` | int | Chunk page range |
 | `chunk_index` | int | Sequential index within document |
-| `keywords` | string[] | Key terms extracted by Gemini |
-| `entities` | string[] | Named clinical/scientific entities |
-| `evidence_level` | string | Optional: `Grade A`, `Grade B`, etc. |
-| `year_published` | int | Publication year if extractable |
+| `keywords` / `technique_tags` | string[] | Topic terms / named clinical techniques |
+| `year_published` | int? | Publication year if extractable |
+
+> Note: the earlier biomedical fields `entities` and GRADE `evidence_level` were **removed**; `domain`/`doc_type` enums were replaced wholesale. `models.py::ChunkMetadata` and `ingestion/metadata_gen.py` are still out of sync with this schema — see `DISCREPANCIES.md`.
 
 ---
 
 ## Prompt Architecture
 
-### Expert Persona Template (in `config/prompt_config.yaml`)
+### Expert Persona Templates (in `config/prompt_config.yaml`)
 
-```
-system: |
-  You are acting as an expert {domain} specialist with deep knowledge of
-  {subdomain}. You have access to a curated corpus of authoritative
-  {doc_type} literature. Answer questions with clinical/scientific rigor,
-  acknowledging uncertainty where evidence is limited.
+Personas are psychotherapy supervisors scoped to CBT/DBT/IPT competence: a `default` persona plus 10 domain-specific personas (`cognitive_behavioral`, `dialectical_behavior`, `trauma_focused`, `interpersonal`, `motivational_interviewing`, `mindfulness_based`, `crisis_intervention`, `therapeutic_alliance`, `clinical_supervision`, `psychopathology_clinical`). `PromptBuilder` selects by `domain` key and falls back to `default` on a miss.
 
-retrieval_instruction: |
-  Based on the user query, the following passages have been retrieved from
-  the {corpus_name} corpus. Use ONLY information contained in these passages
-  to formulate your response. Do not draw on outside knowledge.
-
-citation_format: |
-  Cite each factual claim inline as [Author/Title, p.{page}] or
-  [Source {n}] referencing the numbered source list appended to your response.
-```
+Retrieval instructions are **split by pipeline mode** — `retrieval_instruction_rta` (in-session, terse/actionable) and `retrieval_instruction_asa` (post-session, synthesis) — plus a shared `citation_format`. Template variables include `{domain}`, `{subdomain}`, `{corpus_name}`, `{doc_type_list}`, `{n_passages}`, `{pipeline_mode}`, `{session_event}`, `{therapeutic_modality}`.
 
 ### Query Pipeline
-1. User submits free-text query + optional domain filter
-2. `prompt_builder.py` selects persona from `prompt_config.yaml` by domain
-3. `searcher.py` retrieves top-K chunks (default K=8)
+1. Caller submits query/context + `pipeline_mode` ("rta" or "asa") + `domain`
+2. `prompt_builder.py` selects persona by `domain` and the `rta`/`asa` retrieval instruction block
+3. `searcher.py` retrieves top-K chunks, applying hard pre-filters (`corpus_scope != asa_only` for RTA; `target_audience != patient` except homework)
 4. Full prompt assembled: persona + retrieval instruction + chunks + query
 5. Gemini generates response; grounding metadata mapped to citation list
 6. Response + formatted citations returned to caller
+
+> The query path (`retrieval/`, `generation/`, `rta_prompt/`) is still stubbed — see `DISCREPANCIES.md`.

@@ -6,7 +6,7 @@ This document is the entry point for any new agent session. Read it first, in fu
 
 ## Project in one paragraph
 
-A Python RAG system that provides clinical guidance to psychotherapists trained in **CBT, DBT, and IPT** — and only those three therapy families. It has two operational modes: **RTA** (real-time analysis, in-session) and **ASA** (after-session analysis). A session transcript is ingested, relevant clinical literature is retrieved from a Vertex AI Search DataStore, and Gemini generates grounded guidance with inline citations. The entire source tree is stub-only (`raise NotImplementedError` in every method body). Scaffolding, docstrings, type signatures, and config files are complete and authoritative. Implementation has not started.
+A Python RAG system that provides clinical guidance to psychotherapists trained in **CBT, DBT, and IPT** — and only those three therapy families. It has two operational modes: **RTA** (real-time analysis, in-session) and **ASA** (after-session analysis). A session transcript is ingested, relevant clinical literature is retrieved from a Vertex AI Search DataStore, and Gemini generates grounded guidance with inline citations. **The ingest path is implemented** (`ingestion/*.py` except the dead `watcher.py`, plus `models.py`, `config/settings.py`, `scripts/`, most `tests/`). **The query path is still stub-only** (`raise NotImplementedError`): `generation/`, `retrieval/`, and `rta_prompt/`. Scaffolding, docstrings, type signatures, and config files are complete and authoritative throughout.
 
 ---
 
@@ -28,7 +28,7 @@ Read these files in this order. Do not skip any.
 | 2 | `config/CHANGELOG.md` | What changed in the config files and why. Prevents re-introducing removed fields or modalities. |
 | 3 | `config/metadata_schema.json` | Current authoritative schema. All ingestion, retrieval filter expressions, and Gemini extraction prompts must conform to this. |
 | 4 | `config/prompt_config.yaml` | Persona definitions and retrieval instruction templates. Contains the CBT/DBT/IPT scope constraint in each persona's system prompt. |
-| 5 | `config/ISSUES.md` | 15 open issues. Several are blockers before DataStore registration or ingestion. Check this before implementing anything that touches GCP or the DataStore. |
+| 5 | `config/ISSUES.md` | 23 open issues (I-01–I-23). Several are blockers before DataStore registration or ingestion. Check this before implementing anything that touches GCP or the DataStore. |
 | 6 | `rta_prompt/models.py` | All pipeline I/O types: `PatientContext`, `RTAResponse`, `ASAResponse`, `DetectedEvent`, `SessionTranscript`, `ASAHopResult`. These drive every implementation decision downstream. |
 | 7 | `models.py` | Core shared types: `Chunk`, `ChunkMetadata`, `SearchResult`, `Citation`, `GeneratedResponse`. `ChunkMetadata` is the Pydantic model that must stay in sync with `config/metadata_schema.json`. |
 
