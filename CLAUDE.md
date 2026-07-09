@@ -76,6 +76,7 @@ The `Chunk.chunk_id` canonical form is `"{doc_id}_{chunk_index:05d}"`. This ID i
 |---|---|
 | `config/settings.py` | Singleton `settings` object; reads env vars lazily; call `settings.validate_all()` at startup |
 | `config/metadata_schema.json` | Canonical metadata field definitions; **used both for Gemini extraction prompts and Vertex AI Search schema registration** |
+| `config/schema_loader.py` | `SchemaVocabulary` — structured loader that derives the controlled vocabulary (enums, array fields, defaults, coercion) from `metadata_schema.json`. Single source of truth consumed by `metadata_gen.py` and `setup_vertex_search.py` so the code never drifts from the schema |
 | `config/chunk_config.yaml` | Chunking parameters (token budget, similarity threshold, header patterns); loaded via `ChunkerConfig.from_yaml()` |
 | `config/prompt_config.yaml` | Psychotherapy persona templates (CBT/DBT/IPT scope): `default` plus 10 domain personas; split `retrieval_instruction_rta`/`retrieval_instruction_asa` blocks. `PromptBuilder` selects by domain key, falls back to `default` |
 
@@ -87,7 +88,7 @@ Two-pass approach — structural split first (section headers via regex), then s
 
 ### Metadata Generation (`ingestion/metadata_gen.py`)
 
-Gemini is called once per chunk. The response is validated against `ChunkMetadata` with type coercion (common case: `year_published` arrives as string). Falls back to `_fallback_extraction()` on any Gemini failure — ingestion never hard-fails due to a bad API response. The `doc_id`, `page_start`, `page_end`, and `chunk_index` fields are **always overridden from the `Chunk` object**, never trusted from Gemini output.
+Gemini is called once per chunk. The response is validated and coerced against the psychotherapy schema via `config/schema_loader.py::SchemaVocabulary` (loaded from `metadata_schema.json` at construction), then instantiated as `ChunkMetadata`. The controlled vocabulary is **not** hard-coded in `metadata_gen.py` — enum validity, array normalization, integer parsing, and defaults all come from the schema, and keys absent from the schema (e.g. the removed `entities`/`evidence_level`) are dropped. Common coercions: `year_published` string→int; single string→list for array fields; unknown `domain`→`other`, unknown `doc_type`→`""`. Falls back to `_fallback_extraction()` on any Gemini failure — ingestion never hard-fails due to a bad API response. The `doc_id`, `page_start`, `page_end`, and `chunk_index` fields are **always overridden from the `Chunk` object**, never trusted from Gemini output.
 
 ### Vertex AI Search Indexer (`ingestion/indexer.py`)
 

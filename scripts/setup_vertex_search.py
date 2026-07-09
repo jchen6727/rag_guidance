@@ -29,6 +29,7 @@ from google.api_core.exceptions import AlreadyExists
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import settings
+from config.schema_loader import SchemaVocabulary
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -113,10 +114,15 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
     client = discoveryengine.SchemaServiceClient()
     schema_name = f"{datastore_name}/schemas/default_schema"
 
-    # Build field configs from metadata_schema.json properties
+    # Build field configs from metadata_schema.json properties. The integer and
+    # array field sets are derived from the schema itself (via SchemaVocabulary)
+    # rather than hard-coded, so this stays in sync with metadata_schema.json —
+    # the old {"keywords", "entities"} set referenced the removed `entities`
+    # field and missed every psychotherapy array field. See DISCREPANCIES.md.
+    vocab = SchemaVocabulary(schema_data)
     field_configs: dict[str, discoveryengine.FieldConfig] = {}
-    int_fields = {"page_start", "page_end", "chunk_index", "year_published"}
-    array_fields = {"keywords", "entities"}
+    int_fields = vocab.integer_fields
+    array_fields = vocab.array_fields
 
     for field_name, field_def in schema_data.get("properties", {}).items():
         if field_name in array_fields:

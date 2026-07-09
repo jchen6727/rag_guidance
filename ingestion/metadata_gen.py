@@ -23,6 +23,7 @@ from typing import Optional
 
 import google.generativeai as genai
 
+from config.schema_loader import SchemaVocabulary
 from models import Chunk, ChunkMetadata
 
 logger = logging.getLogger(__name__)
@@ -31,20 +32,14 @@ logger = logging.getLogger(__name__)
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 2.0  # seconds; doubled each attempt
 
-_VALID_DOMAINS = {
-    "cardiology", "oncology", "neurology", "pharmacology", "internal_medicine",
-    "surgery", "pediatrics", "radiology", "pathology", "immunology", "endocrinology",
-    "gastroenterology", "pulmonology", "nephrology", "hematology", "infectious_disease",
-    "psychiatry", "dermatology", "orthopedics", "anatomy", "physiology", "biochemistry",
-    "microbiology", "genetics", "epidemiology", "biostatistics", "other",
-}
+# The controlled vocabulary (valid domains, doc_types, enums, array fields, and
+# defaults) is NOT hard-coded here — it is derived from config/metadata_schema.json
+# at construction time via SchemaVocabulary, so metadata_gen can never drift from
+# the authoritative schema. See config/schema_loader.py and DISCREPANCIES.md.
 
-_VALID_DOC_TYPES = {
-    "textbook", "clinical_guideline", "research_paper",
-    "review_article", "case_report", "front_matter",
-}
-
-_VALID_EVIDENCE_LEVELS = {"A", "B", "C", "D", None}
+# Provenance fields are always taken from the source Chunk, never trusted from
+# Gemini output.
+_PROVENANCE_FIELDS = ("doc_id", "page_start", "page_end", "chunk_index")
 
 
 class MetadataGenerator:
@@ -77,6 +72,9 @@ class MetadataGenerator:
         self._model_name = model_name
         self._temperature = temperature
         self._schema = self._load_schema(schema_path)
+        # Controlled vocabulary derived from the authoritative schema; drives
+        # both prompt construction and response coercion.
+        self._vocab = SchemaVocabulary(self._schema)
         self._client: Optional[genai.GenerativeModel] = None
         self._api_key = api_key
 
@@ -139,7 +137,12 @@ class MetadataGenerator:
         """Build the Gemini extraction prompt for a chunk.
 
         The prompt includes:
-          - The JSON schema of required output fields (from self._schema)
+          - The JSON schema of output fields (from self._schema)
+          - An inline enum legend listing the allowed values per controlled field
+            (derived from the schema via SchemaVocabulary)
+          - Psychotherapy-specific extraction guidance from the schema `notes`
+            (domain-vs-modality distinction, missingness inference, patient-facing
+            exclusion) so RTA/ASA fields are elicited correctly
           - The context window (if provided)
           - The chunk text
           - Explicit instruction to output valid JSON only
@@ -155,10 +158,17 @@ class MetadataGenerator:
         schema_excerpt = json.dumps(properties, indent=2)
 
         parts = [
-            "Extract structured metadata from the following clinical/scientific text.",
+            "You are extracting structured metadata for a psychotherapy guidance "
+            "RAG corpus (CBT/DBT/IPT clinicians; real-time RTA and after-session "
+            "ASA retrieval pipelines).",
             "Respond ONLY with valid JSON matching this schema (no markdown, no prose):",
             "",
             schema_excerpt,
+            "",
+            "Allowed values for controlled fields (use these EXACT tokens):",
+            self._enum_legend(),
+            "",
+            self._extraction_guidance(),
             "",
         ]
 
@@ -173,6 +183,37 @@ class MetadataGenerator:
         ]
 
         return "\n".join(parts)
+
+    def _enum_legend(self) -> str:
+        """Build an inline "field: allowed values" legend from the schema enums."""
+        lines: list[str] = []
+        for field in self._vocab.field_names:
+            enum = self._vocab.enum_values(field)
+            if not enum:
+                continue
+            marker = " (array; select all that apply)" if self._vocab.is_array(field) else ""
+            allowed = ", ".join(sorted(enum))
+            if self._vocab.is_nullable(field):
+                allowed += ", null"
+            lines.append(f"- {field}{marker}: {allowed}")
+        return "\n".join(lines)
+
+    def _extraction_guidance(self) -> str:
+        """Return psychotherapy-specific extraction notes drawn from schema `notes`."""
+        notes = self._schema.get("notes", {})
+        guidance = [
+            "Extraction guidance:",
+            "- domain is document-level (the source's overall orientation); "
+            "therapeutic_modality is chunk-level (what THIS passage addresses) — "
+            "they may differ. " + notes.get("domain_vs_modality", ""),
+            "- Populate missingness by inferring what the source does NOT report "
+            "(demographics, fidelity monitoring, adverse events), not only what it states.",
+            "- clinical_caution and practice_recommendation_level polarity "
+            "(use_with_caution/contraindicated) are patient-safety fields: extract "
+            "them explicitly; never omit a stated contraindication.",
+            "- " + notes.get("routing_safety", ""),
+        ]
+        return "\n".join(line for line in guidance if line.strip())
 
     def _call_gemini(self, prompt: str) -> dict:
         """Send prompt to Gemini and return the parsed JSON response.
@@ -216,12 +257,16 @@ class MetadataGenerator:
         ) from last_exc
 
     def _validate_and_coerce(self, raw: dict, chunk: Chunk) -> ChunkMetadata:
-        """Validate the Gemini response dict against ChunkMetadata and coerce types.
+        """Validate the Gemini response dict against the schema and coerce types.
 
-        Common coercions:
-          - String "2019" -> int 2019 for year_published
-          - Single string -> list[str] for keywords and entities
-          - Unknown doc_type values -> "" to avoid filter expression errors
+        Coercion is driven entirely by ``config/metadata_schema.json`` via
+        ``SchemaVocabulary.coerce``:
+          - String "2019" -> int 2019 for year_published / sample_size
+          - Single string -> list[str] for array fields (keywords, modality, ...)
+          - Enum values not in the schema -> the field's schema default
+            (e.g. unknown domain -> "other", unknown doc_type -> "")
+          - Keys not in the schema (legacy ``entities`` / ``evidence_level``) are
+            dropped rather than passed through.
 
         Args:
             raw: Raw dict parsed from Gemini's JSON response.
@@ -234,54 +279,27 @@ class MetadataGenerator:
             ValidationError: If the response is structurally invalid after coercion.
                              Callers should catch this and call _fallback_extraction.
         """
-        # Coerce year_published
-        year = raw.get("year_published")
-        if isinstance(year, str):
-            try:
-                raw["year_published"] = int(year)
-            except (ValueError, TypeError):
-                raw["year_published"] = None
+        coerced = self._vocab.coerce(raw)
 
-        # Coerce list fields
-        for list_field in ("keywords", "entities"):
-            val = raw.get(list_field)
-            if isinstance(val, str):
-                raw[list_field] = [val]
-            elif not isinstance(val, list):
-                raw[list_field] = []
+        # Always override provenance fields from chunk (never trust Gemini for these).
+        coerced["doc_id"] = chunk.doc_id
+        coerced["page_start"] = chunk.page_start
+        coerced["page_end"] = chunk.page_end
+        coerced["chunk_index"] = chunk.chunk_index
 
-        # Coerce domain: unknown values default to "other"
-        if raw.get("domain") not in _VALID_DOMAINS:
-            raw["domain"] = "other"
-
-        # Coerce doc_type: unknown values default to ""
-        if raw.get("doc_type") not in _VALID_DOC_TYPES:
-            raw["doc_type"] = ""
-
-        # Coerce evidence_level
-        if raw.get("evidence_level") not in _VALID_EVIDENCE_LEVELS:
-            raw["evidence_level"] = None
-
-        # Ensure source_file is a string
-        if not isinstance(raw.get("source_file"), str):
-            raw["source_file"] = ""
-
-        # Always override provenance fields from chunk (never trust Gemini for these)
-        raw["doc_id"] = chunk.doc_id
-        raw["page_start"] = chunk.page_start
-        raw["page_end"] = chunk.page_end
-        raw["chunk_index"] = chunk.chunk_index
-
-        return ChunkMetadata(**raw)
+        return ChunkMetadata(**coerced)
 
     def _fallback_extraction(self, chunk: Chunk) -> ChunkMetadata:
         """Produce minimal metadata via rule-based heuristics when Gemini fails.
 
         Extracts:
-          - doc_id, source_file, page_start, page_end, chunk_index from chunk fields
+          - doc_id, page_start, page_end, chunk_index from chunk fields
           - title from the first non-empty line of chunk text
           - keywords from high-frequency capitalized terms (TF-IDF not available here)
-          - All other fields set to defaults
+          - domain/doc_type left at their schema defaults ("other" / "") so the
+            chunk is not misclassified; all remaining fields use ChunkMetadata's
+            schema-aligned defaults. The removed biomedical fields (entities,
+            evidence_level) are no longer populated.
 
         Args:
             chunk: The chunk for which Gemini extraction failed.

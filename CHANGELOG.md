@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-07-09
+
+### Added
+
+- **`config/schema_loader.py`** — `SchemaVocabulary`, a structured loader that parses `config/metadata_schema.json` (the authoritative psychotherapy RTA/ASA schema) and exposes its enums, array-field membership, nullability, defaults, required-field list, and a schema-driven `coerce()` method. This makes the metadata controlled vocabulary single-sourced from the JSON schema instead of being duplicated in Python.
+- **`tests/test_schema_loader.py`** — coverage for loading, introspection, defaults, and coercion (including that removed fields `entities`/`evidence_level` are absent and that unknown keys are dropped).
+
+### Changed
+
+- **`ingestion/metadata_gen.py`** — removed the hard-coded biomedical constants `_VALID_DOMAINS`, `_VALID_DOC_TYPES`, and `_VALID_EVIDENCE_LEVELS`. `_validate_and_coerce()` now delegates to `SchemaVocabulary.coerce()` (schema-driven enum/array/integer coercion; drops keys not in the schema). `_build_extraction_prompt()` now emits a schema-derived enum legend and RTA/ASA extraction guidance (domain-vs-modality, missingness inference, patient-facing exclusion) from the schema `notes`. `_fallback_extraction()` no longer references the removed fields.
+- **`models.py`** — `ChunkMetadata` rewritten from the old biomedical model to mirror all 37 psychotherapy schema fields with schema-aligned defaults; removed `entities` and `evidence_level` per `metadata_schema.json` `notes.removed_fields`.
+- **`scripts/setup_vertex_search.py`** — `int_fields`/`array_fields` for schema registration are now derived from `SchemaVocabulary` instead of the stale hard-coded `{"keywords", "entities"}` set (which referenced the removed `entities` field and missed every psychotherapy array field).
+- **`tests/test_metadata_gen.py`** — generator fixture now loads the real `config/metadata_schema.json` (the empty placeholder schema no longer exercises schema-driven coercion); sample Gemini response uses psychotherapy values and drops `entities`.
+
+### Documentation updates
+
+- **`DISCREPANCIES.md`** — "Metadata schema vs code" bullets marked `#DONE`; added an "Issues encountered during implementation" list (array fields still unregistered as filterable, `doc_type` `""` sentinel, relaxed `required` semantics, `domain` coercion vs persona fallback, deferred `searcher._parse_metadata`).
+- **`CLAUDE.md`** — Metadata Generation section and Configuration table note that the controlled vocabulary is loaded from `metadata_schema.json` via `config/schema_loader.py`.
+
+---
+
 ## 2026-06-16
 
 ### Changed
