@@ -62,10 +62,12 @@ def _client_options() -> ClientOptions | None:
         ClientOptions with the regional api_endpoint set, or None for the
         default (global) endpoint.
     """
-    location = settings.gcp_location
+    location = settings.gcs_datastore_region
     if location == "global":
         return None
-    return ClientOptions(api_endpoint=f"{location}-discoveryengine.googleapis.com")
+    else:
+        return ClientOptions(f"{location}-discoveryengine.googleapis.com")
+    return None
 
 
 def create_datastore(dry_run: bool = False) -> str:
@@ -84,7 +86,7 @@ def create_datastore(dry_run: bool = False) -> str:
         google.api_core.exceptions.GoogleAPIError: On API failure.
     """
     parent = (
-        f"projects/{settings.gcp_project_id}/locations/{settings.gcp_location}"
+        f"projects/{settings.gcp_project_id}/locations/{settings.gcs_datastore_region}"
         f"/collections/default_collection"
     )
     datastore_name = f"{parent}/dataStores/{settings.vertex_search_datastore_id}"
@@ -217,7 +219,7 @@ def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
         Full Search Engine resource name string.
     """
     parent = (
-        f"projects/{settings.gcp_project_id}/locations/{settings.gcp_location}"
+        f"projects/{settings.gcp_project_id}/locations/{settings.gcs_datastore_region}"
         f"/collections/default_collection"
     )
     engine_name = f"{parent}/engines/{settings.vertex_search_engine_id}"
