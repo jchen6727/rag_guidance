@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-07-09 (d)
+
+### Fixed
+
+- **`scripts/preflight_check.sh`** — the IAM permissions check (§5) called `gcloud projects test-iam-permissions`, which does not exist as a gcloud command; the script always fell through to its `2>/dev/null` failure path and silently reported every required permission as missing. Replaced with a direct `curl` POST to the Cloud Resource Manager `testIamPermissions` REST API (`cloudresourcemanager.googleapis.com/v1/projects/{id}:testIamPermissions`), authenticated with the same ADC access token the Python code uses, with the response parsed via `python3 -c` (repo already requires Python). The check now distinguishes network/curl failure, non-200 HTTP responses, and unparseable JSON from an actual missing-permission result, each with its own `fail`/`fix` message instead of collapsing into one generic failure.
+- **`scripts/preflight_check.sh`** — audited every `2>/dev/null` in the script for silent failure. §4 (`gcloud services list`) previously suppressed all stderr and treated a failed/permission-denied call identically to "no APIs enabled," so every required API was misreported as not enabled instead of surfacing the real cause. §1 (`gcloud auth list`), §2 (`gcloud config get-value project`), and §3 (`gcloud billing projects describe`) had the same issue — errors indistinguishable from the "true" negative case (no active account / no matching project / billing disabled). All four now capture stderr, check the command's exit code explicitly, and report a distinct `fail` message with the raw gcloud error when the command itself failed, only falling back to the original negative-result message when the command succeeded but returned the "false" case.
+
+---
+
+## 2026-07-09 (c)
+
+### Added
+
+- **`scripts/preflight_check.sh`** — new gcloud-based preflight check for `scripts/setup_vertex_search.py`. Verifies (in order) that the gcloud CLI is installed and authenticated, Application Default Credentials are set up, `GCP_PROJECT_ID` exists and matches the active gcloud config project, billing is enabled, the required APIs (`discoveryengine.googleapis.com`, `storage.googleapis.com`, `aiplatform.googleapis.com`) are enabled, and the active identity holds the IAM permissions `setup_vertex_search.py` needs (checked via `gcloud projects test-iam-permissions`, so it correctly accounts for permissions granted through group membership, not just direct role bindings). On any failure it prints the exact `gcloud` command to fix that specific issue and keeps checking the rest, so a single run surfaces every outstanding problem instead of stopping at the first one. Complements the existing Python-based `scripts/verify_context.py` (API reachability check via the Discovery Engine client) rather than replacing it — this script checks project/billing/IAM state ahead of time using the `gcloud` CLI directly, which doesn't require the API client libraries or credentials to already be fully working.
+
+### Documentation updates
+
+- **`ingestion/INGESTION_TUTORIAL.md`** — inserted a new "Step 2 — Preflight check" between environment configuration and resource provisioning, instructing readers to run `scripts/preflight_check.sh` before `setup_vertex_search.py`. All subsequent steps ("Provision GCP resources" through "Ingest a single PDF") renumbered up by one (old Step 2–6 → Step 3–7).
+
+---
+
 ## 2026-07-09 (b)
 
 ### Fixed

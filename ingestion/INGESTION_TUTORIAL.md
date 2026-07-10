@@ -57,7 +57,45 @@ set +a
 
 ---
 
-## Step 2 — Provision GCP resources (run once)
+## Step 2 — Preflight check
+
+Before provisioning, verify your gcloud project, billing, and IAM permissions
+are actually ready for `setup_vertex_search.py`. This catches the most common
+first-run failures (wrong active project, billing not linked, Discovery
+Engine API not enabled, missing IAM role) in one pass, with the exact `gcloud`
+command to fix each one printed to the console.
+
+```bash
+scripts/preflight_check.sh
+```
+
+Expected output on success:
+```
+=== RAG Guidance — Vertex AI Search preflight check ===
+
+✓ gcloud CLI found (Google Cloud SDK 480.0.0)
+✓ Active gcloud account: you@example.com
+✓ Application Default Credentials available
+✓ Project 'your-gcp-project-id' exists and is accessible
+✓ Active gcloud config project matches GCP_PROJECT_ID
+✓ Billing is enabled on 'your-gcp-project-id'
+✓ API enabled: discoveryengine.googleapis.com
+✓ API enabled: storage.googleapis.com
+✓ API enabled: aiplatform.googleapis.com
+✓ IAM permissions sufficient for you@example.com to run setup_vertex_search.py
+==========================================================
+✓ All preflight checks passed. Safe to run:
+    PYTHONPATH=. python scripts/setup_vertex_search.py --dry-run
+```
+
+If any check fails, the script prints a `Fix:` block with the `gcloud`
+command(s) to resolve it and continues checking the rest, so a single run
+surfaces every outstanding issue rather than stopping at the first one. It
+exits non-zero if anything failed — don't proceed to Step 3 until it's clean.
+
+---
+
+## Step 3 — Provision GCP resources (run once)
 
 This creates the Vertex AI Search DataStore and registers the metadata schema.
 **Run this before any ingestion.** Chunks indexed before schema registration
@@ -86,7 +124,7 @@ INFO   Engine:    projects/.../engines/rag-guidance-engine
 
 ---
 
-## Step 3 — Place PDFs in the corpus directory
+## Step 4 — Place PDFs in the corpus directory
 
 The default corpus directory is `corpus/` (set via `CORPUS_DIR` env var).
 PDFs already present in the repo:
@@ -106,7 +144,7 @@ cp /path/to/your/document.pdf corpus/
 
 ---
 
-## Step 4 — Dry-run to preview
+## Step 5 — Dry-run to preview
 
 Before touching GCS or Vertex AI Search, verify the extract → chunk → metadata
 steps work locally:
@@ -145,7 +183,7 @@ fallback rule-based extraction was used. This does not block ingestion.
 
 ---
 
-## Step 5 — Ingest all PDFs in corpus/
+## Step 6 — Ingest all PDFs in corpus/
 
 ```bash
 PYTHONPATH=. python scripts/batch_ingest.py
@@ -171,7 +209,7 @@ On success, the file is recorded in `.ingestion_manifest.json`:
 
 ---
 
-## Step 6 — Ingest a single PDF
+## Step 7 — Ingest a single PDF
 
 ```bash
 PYTHONPATH=. python scripts/batch_ingest.py --file corpus/PE_for_PTSD_2022.pdf
