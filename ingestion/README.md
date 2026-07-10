@@ -216,7 +216,7 @@ gs://<bucket>/chunks/<doc_id>.jsonl
 
 **Re-ingestion pattern:** Call `delete_document(chunk_id)` for each affected chunk before re-importing. For full corpus refresh, use `scripts/purge_datastore.py --confirm`.
 
-**Dependencies:** `google.cloud.discoveryengine_v1beta`, `models.ImportResult`
+**Dependencies:** `google.cloud.discoveryengine_v1`, `models.ImportResult`
 
 **Prerequisite:** The DataStore schema must be registered via `scripts/setup_vertex_search.py` before the first import. Chunks imported before schema registration silently drop unregistered metadata fields.
 

@@ -1,6 +1,6 @@
 from google.cloud import resourcemanager_v3
 from google.api_core.exceptions import GoogleAPICallError
-from google.cloud import discoveryengine_v1beta as discoveryengine # why v1beta?
+from google.cloud import discoveryengine_v1 as discoveryengine
 from google.api_core.exceptions import GoogleAPICallError, PermissionDenied
 
 def verify_project_context(project_id: str):

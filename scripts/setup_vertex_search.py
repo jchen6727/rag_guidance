@@ -27,7 +27,7 @@ from pathlib import Path
 from google.api_core import retry as api_retry
 from google.api_core.client_options import ClientOptions
 from google.api_core.exceptions import AlreadyExists, DeadlineExceeded, ServiceUnavailable
-from google.cloud import discoveryengine_v1beta as discoveryengine
+from google.cloud import discoveryengine_v1 as discoveryengine
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import settings

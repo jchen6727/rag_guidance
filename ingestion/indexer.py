@@ -23,7 +23,7 @@ from typing import Optional
 
 from google.api_core import retry as api_retry
 from google.api_core.exceptions import DeadlineExceeded, ServiceUnavailable
-from google.cloud import discoveryengine_v1beta as discoveryengine
+from google.cloud import discoveryengine_v1 as discoveryengine
 from google.longrunning.operations_pb2 import GetOperationRequest
 
 from models import ImportResult

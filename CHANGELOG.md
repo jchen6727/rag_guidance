@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-07-09 (f)
+
+### Changed
+
+- **Switched the Discovery Engine client from `discoveryengine_v1beta` to `discoveryengine_v1`** in all four files that import it: `scripts/setup_vertex_search.py`, `ingestion/indexer.py`, `retrieval/searcher.py`, and `scripts/verify_context.py` (the last also carried a `# why v1beta?` comment, now resolved). Also updated the stale `discoveryengine_v1beta` reference in `ingestion/README.md`.
+
+  **Reason for the switch.** No feature in this project requires the beta surface. Every Discovery Engine symbol the code touches — `DataStore`, `Schema`, `Engine`, `IndustryVertical`, `SolutionType`, `SearchTier`, `ImportDocumentsRequest`, `GcsSource`, `ImportDocumentsMetadata`, `ListDocumentsRequest`, `DocumentServiceClient`, `DataStoreServiceClient`, `SchemaServiceClient`, `EngineServiceClient`, `SearchServiceClient`, `SearchResponse` — exists identically in `discoveryengine_v1` (verified against the installed 0.20.0). The provisioning + ingestion path (DataStore/Schema/Engine creation, `ImportDocuments`, `ListDocuments`) and the search path (`SearchServiceClient.search`) are all GA operations. No `.md` documented any rationale for choosing v1beta; it appears to have been copied from a tutorial rather than chosen for a beta-only capability. Standardizing on the GA (`v1`) surface removes reliance on a preview API whose shape can change without notice.
+
+  **IMPORTANT — this switch does NOT fix the reported `FieldConfig` error.** The premise that `discoveryengine.FieldConfig` is a v1-vs-v1beta difference is incorrect. `FieldConfig` does **not** exist in *either* `discoveryengine_v1` or `discoveryengine_v1beta` (0.20.0), and the `Schema` message in both versions carries only three fields — `name`, `struct_schema`, `json_schema` — with **no** `field_configs` field. The `register_schema()` block in `scripts/setup_vertex_search.py` that builds `discoveryengine.FieldConfig(...)` and passes `Schema(field_configs=...)` was written against a client API that never shipped; it raises `AttributeError` under both v1 and v1beta and would not be fixed by any version pin. Field-level indexing in Discovery Engine is expressed as annotations **inside** the `json_schema` document (per-property `retrievable` / `indexable` / `searchable` / `dynamicFacetable` booleans), not via a separate `FieldConfig` object. This is left **unresolved by this change** (see "Possible issues" below and DISCREPANCIES.md) because the task scoped the `FieldConfig` fix to the "v1beta is required" branch, which does not apply.
+
+### Possible issues arising from the switch
+
+- **`setup_vertex_search.py` still fails at the `FieldConfig` line.** As above, the dead `FieldConfig`/`field_configs` code is unchanged and still raises `AttributeError` when `register_schema()` runs (non-dry-run). The correct fix — emit the indexing annotations into the `json_schema` string and drop `FieldConfig` entirely — is a separate follow-up. Until then `create_datastore` and `create_search_engine` work, but schema registration does not.
+- **Future query-path features may need beta.** The query path (`retrieval/searcher.py`, `generation/`) is still stubbed. Some Discovery Engine capabilities that were preview-only at various points (e.g. certain `SearchRequest.ContentSearchSpec` summary/extractive options, the conversational `answer`/grounded-generation methods, chunk-mode search) are richer or only present under `v1beta`. If the implemented query path needs one of those, that specific client (only) may need to re-import `discoveryengine_v1beta`; the ingestion/provisioning clients should stay on `v1`. Generation is expected to call Gemini directly (`google.generativeai`), not the Discovery Engine `answer` API, so this is unlikely to bite.
+- **No wire/behavior change** for the operations actually used: DataStore/Schema/Engine resources, `ImportDocuments` semantics, filter (AIP-160) syntax, and regional endpoint hosts are identical across v1 and v1beta. Enum values and resource-name formats are unchanged, so no re-provisioning is required.
+
+---
+
 ## 2026-07-09 (e)
 
 ### Fixed
