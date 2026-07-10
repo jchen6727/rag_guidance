@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-07-09 (e)
+
+### Fixed
+
+- **`scripts/setup_vertex_search.py`** — `DataStoreServiceClient()`, `SchemaServiceClient()`, and `EngineServiceClient()` were constructed with no `client_options`, so they always talked to the global Discovery Engine endpoint (`discoveryengine.googleapis.com`) regardless of `settings.gcp_location`. When `GCP_LOCATION` is a non-global region (e.g. `us`, `eu`), requests for that regional parent resource are misrouted and don't fail fast — they hang until the RPC/LRO timeout (up to 600s) with no useful error (a "gRPC sinkhole"). Added `_client_options()`, which resolves `{location}-discoveryengine.googleapis.com` for non-global locations (`None`/default for `global`), and passed it to all three service clients.
+- **`scripts/preflight_check.sh`** — added a new §5 check that resolves the same endpoint `setup_vertex_search.py` will use for `GCP_LOCATION` and verifies (a) the location is a recognized Discovery Engine location (`global`, `us`, `eu`) and (b) the resulting endpoint hostname is resolvable, so an invalid/unreachable `GCP_LOCATION` is caught in seconds instead of surfacing as a multi-minute hang inside `setup_vertex_search.py`. Old §5 (IAM permissions) renumbered to §6.
+
+### TODO — other possible gRPC sinkholes found by static check of `scripts/*.py`
+
+Same failure shape as above (a Discovery Engine gRPC client constructed/used without a location-matched endpoint, or with an invalid default location), not yet fixed:
+
+- `ingestion/indexer.py:241` — `self._client = discoveryengine.DocumentServiceClient()` is constructed with no `client_options`, so it always targets the global endpoint even though `VertexSearchIndexer.__init__` accepts and stores a `location` (`self._location`, set at `ingestion/indexer.py:73`). Reached from two call sites in `scripts/`:
+  - `scripts/batch_ingest.py:280` — `VertexSearchIndexer(..., location=settings.gcp_location, ...)`
+  - `scripts/purge_datastore.py:175` — `VertexSearchIndexer(..., location=settings.gcp_location, ...)`
+  Needs the same `_client_options()`-style fix as `setup_vertex_search.py`, applied inside `ingestion/indexer.py:_get_client()`.
+- `scripts/verify_context.py:21` — `verify_discovery_engine_api(project_id: str, location: str = "us-central1")` defaults `location` to `"us-central1"`, which is not a valid Discovery Engine location (only `global`, `us`, `eu` are supported). The function's own `client_options` logic (`verify_context.py:25-29`) is otherwise correct, but with the bad default it builds a nonexistent endpoint (`us-central1-discoveryengine.googleapis.com`) and the `list_data_stores` call at `verify_context.py:37` will sinkhole. The unguarded module-level call at `verify_context.py:68` (`verify_discovery_engine_api(project_id="jchen-6727")`) exercises this default and executes on import.
+
+---
+
 ## 2026-07-09 (d)
 
 ### Fixed

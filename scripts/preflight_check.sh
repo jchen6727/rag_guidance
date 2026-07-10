@@ -182,7 +182,43 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 5. IAM permissions required by setup_vertex_search.py
+# 5. GCP_LOCATION / regional endpoint reachability (gRPC sinkhole check)
+# ---------------------------------------------------------------------------
+# setup_vertex_search.py targets the Discovery Engine endpoint matching
+# GCP_LOCATION (global -> discoveryengine.googleapis.com, otherwise
+# <location>-discoveryengine.googleapis.com). If that endpoint doesn't exist
+# or isn't reachable, the Python client's LRO calls don't fail fast — they
+# hang until the RPC/LRO timeout (up to 600s) with no useful error. Catch
+# a bad/unreachable GCP_LOCATION here in seconds instead.
+KNOWN_DISCOVERYENGINE_LOCATIONS=("global" "us" "eu")
+LOCATION_KNOWN=false
+for loc in "${KNOWN_DISCOVERYENGINE_LOCATIONS[@]}"; do
+    if [[ "${GCP_LOCATION}" == "${loc}" ]]; then
+        LOCATION_KNOWN=true
+        break
+    fi
+done
+
+if [[ "${GCP_LOCATION}" == "global" ]]; then
+    DISCOVERYENGINE_ENDPOINT="discoveryengine.googleapis.com"
+else
+    DISCOVERYENGINE_ENDPOINT="${GCP_LOCATION}-discoveryengine.googleapis.com"
+fi
+
+if [[ "${LOCATION_KNOWN}" != "true" ]]; then
+    fail "GCP_LOCATION '${GCP_LOCATION}' is not a recognized Discovery Engine location (${KNOWN_DISCOVERYENGINE_LOCATIONS[*]})"
+    fix "Set GCP_LOCATION to one of: ${KNOWN_DISCOVERYENGINE_LOCATIONS[*]} in .env
+Note: the DataStore region is immutable after creation — verify before running setup_vertex_search.py."
+elif ! getent hosts "${DISCOVERYENGINE_ENDPOINT}" >/dev/null 2>&1 && ! host "${DISCOVERYENGINE_ENDPOINT}" >/dev/null 2>&1 && ! nslookup "${DISCOVERYENGINE_ENDPOINT}" >/dev/null 2>&1; then
+    fail "Cannot resolve Discovery Engine endpoint '${DISCOVERYENGINE_ENDPOINT}' for GCP_LOCATION='${GCP_LOCATION}'"
+    fix "Check DNS/network connectivity, and confirm GCP_LOCATION='${GCP_LOCATION}' is correct.
+setup_vertex_search.py will otherwise hang until its RPC/LRO timeout (up to 600s) instead of failing fast."
+else
+    pass "GCP_LOCATION='${GCP_LOCATION}' resolves to reachable endpoint: ${DISCOVERYENGINE_ENDPOINT}"
+fi
+
+# ---------------------------------------------------------------------------
+# 6. IAM permissions required by setup_vertex_search.py
 # ---------------------------------------------------------------------------
 REQUIRED_PERMISSIONS=(
     "resourcemanager.projects.get"

@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 from google.api_core import retry as api_retry
+from google.api_core.client_options import ClientOptions
 from google.api_core.exceptions import AlreadyExists, DeadlineExceeded, ServiceUnavailable
 from google.cloud import discoveryengine_v1beta as discoveryengine
 
@@ -44,6 +45,27 @@ _RETRY_TRANSIENT = api_retry.Retry(
     multiplier=2.0,
     deadline=300.0, # retry extended 120 -> 300 in case GCP scale up
 )
+
+
+def _client_options() -> ClientOptions | None:
+    """Resolve the regional API endpoint for settings.gcp_location.
+
+    The Discovery Engine client libraries default to the *global* endpoint
+    (discoveryengine.googleapis.com) regardless of settings.gcp_location. If
+    GCP_LOCATION is a non-global region (e.g. "us", "eu"), calls made against
+    the global endpoint for a regional parent resource are misrouted: they
+    don't fail fast, they hang until the RPC/LRO timeout elapses with no
+    useful error — a "gRPC sinkhole". Passing the matching regional endpoint
+    via client_options avoids this.
+
+    Returns:
+        ClientOptions with the regional api_endpoint set, or None for the
+        default (global) endpoint.
+    """
+    location = settings.gcp_location
+    if location == "global":
+        return None
+    return ClientOptions(api_endpoint=f"{location}-discoveryengine.googleapis.com")
 
 
 def create_datastore(dry_run: bool = False) -> str:
@@ -73,7 +95,7 @@ def create_datastore(dry_run: bool = False) -> str:
         )
         return datastore_name
 
-    client = discoveryengine.DataStoreServiceClient()
+    client = discoveryengine.DataStoreServiceClient(client_options=_client_options())
 
     datastore = discoveryengine.DataStore(
         display_name=settings.vertex_search_datastore_id,
@@ -124,7 +146,7 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
         )
         return
 
-    client = discoveryengine.SchemaServiceClient()
+    client = discoveryengine.SchemaServiceClient(client_options=_client_options())
     schema_name = f"{datastore_name}/schemas/default_schema"
 
     # Build field configs from metadata_schema.json properties. The integer and
@@ -206,7 +228,7 @@ def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
         )
         return engine_name
 
-    client = discoveryengine.EngineServiceClient()
+    client = discoveryengine.EngineServiceClient(client_options=_client_options())
 
     engine = discoveryengine.Engine(
         display_name=settings.vertex_search_engine_id,
