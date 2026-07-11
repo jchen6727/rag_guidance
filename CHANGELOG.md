@@ -2,6 +2,33 @@
 
 ---
 
+## 2026-07-10
+
+### Investigated — is `FieldConfig` reachable via `discoveryengine_v1alpha`?
+
+Empirically checked the alpha surface (installed `google-cloud-discoveryengine` 0.20.0):
+
+- **`discoveryengine_v1alpha.types.FieldConfig` exists**, and — unlike v1/v1beta — **`v1alpha.Schema` does carry a `field_configs` field.** So the alpha import in the proposed snippet resolves.
+- **The proposed snippet still fails as written.** `FieldConfig(filterable=..., retrievable=..., searchable=...)` raises `ValueError: Unknown field for FieldConfig: filterable`. The real proto fields are `field_path` (Required), `field_type` (Output only), `indexable_option`, `searchable_option`, `retrievable_option`, `dynamic_facetable_option`, `completable_option`, `recs_filterable_option`. There is **no** `filterable` field; the search-filter/facet knob is **`indexable_option = INDEXABLE_ENABLED`** (the docstring: "field values are indexed so that it can be filtered or faceted in SearchService.Search"). The `FilterableOption` enum that *does* exist pairs with `recs_filterable_option`, which is a **Recommendations** filter, not a Search filter.
+- **Decisive blocker: `Schema.field_configs` is `OUTPUT_ONLY`** (confirmed from the generated docstring: *"Output only. Configurations for fields of the schema."*). It is a read-back of the configuration the server *derived*, not an input to `UpdateSchema`. `FieldConfig.field_type` is likewise `OUTPUT_ONLY`. So even a *correctly*-constructed `FieldConfig` cannot be submitted to register indexing — the server ignores/rejects `field_configs` on write. **Moving to v1alpha does not enable programmatic field-config registration.**
+
+**Conclusion:** v1alpha is *not* necessary and would not fix the problem. Field indexing in Vertex AI Search is configured by annotations embedded **inside the schema document** (`retrievable`/`indexable`/`searchable`/`dynamicFacetable`), which is a GA capability available on the `discoveryengine_v1` `json_schema`. We stay on **v1 (GA)**. Full three-way comparison written to `discovery_engine_comparison.md`.
+
+### Fixed
+
+- **`scripts/setup_vertex_search.py::register_schema()`** — replaced the dead `discoveryengine.FieldConfig(...)` + `Schema(field_configs=...)` block (which raised `AttributeError` under every API surface) with `_annotate_schema_for_indexing()`, which injects Vertex AI Search indexing keywords into a copy of `metadata_schema.json` and submits it as the DataStore `json_schema`. Per field: `retrievable: true` (returned on results — needed for citations and `ChunkMetadata` round-trip), `indexable: true` (usable in AIP-160 filter expressions and facets — the "filterable" requirement), and `searchable: true` for string leaves. Removed the now-unused `SchemaVocabulary` import from this script.
+- **Array fields are now registered as filterable (closes DISCREPANCIES.md "Array fields still not registered as filterable").** For `type: array` properties the keywords attach to the element (`items`) leaf, so all 16 array metadata fields — `therapeutic_modality`, `clinical_presentation`, `session_event_tags`, `analysis_function`, `patient_population`, `risk_dimension_tags`, `outcome_measure_tags`, `clinical_caution`, `technique_tags`, `population_focus`, `setting`, `presentation_coverage`, `intended_use_context`, `source_language`, `keywords` — become filterable. `missingness` is deliberately left retrievable-but-not-indexable, per `metadata_schema.json` `notes.vertex_ai_search` ("informational only … does not require filterable registration").
+
+### Why losing the array-field filters mattered (architecture + ingestion impact)
+
+This is recorded here and in DISCREPANCIES.md because the impact is easy to under-rate:
+
+- **The array fields are the primary RTA/ASA retrieval filters, not incidental tags.** `BOOTSTRAP.md` calls array-field filterable registration "a DataStore registration correctness requirement — without it the RTA event filter does not function." An in-session (RTA) query narrows the corpus by `therapeutic_modality`, `session_event_tags`, `risk_dimension_tags`, `clinical_presentation`, etc. With those fields unregistered, a server-side filter such as `therapeutic_modality: ANY("DBT")` matches nothing (the field is not indexed), so the retrieval step either errors or silently returns an empty/unfiltered set — the guidance degrades from "modality- and event-scoped" to "whatever full-text search returns," which is a clinical-safety-relevant regression for a system meant to keep guidance within a clinician's trained modality.
+- **The values were never lost from storage — only from *filtering*.** Ingestion still writes every array value into the document `structData` (they are `retrievable`), so they come back on results and could be filtered *client-side* after retrieval. But that defeats server-side pre-filtering: you cannot bound `top_k` to the right subset before ranking, so recall/precision on scoped queries drops and you pay to retrieve-then-discard.
+- **Single-batch ingestion makes correct up-front registration *more* critical, and is exactly why v1alpha is unnecessary.** This corpus is ingested as one batch event: `setup_vertex_search.py` registers the schema **once**, then `batch_ingest.py` runs the single `ImportDocuments`. Changing metadata means `purge_datastore.py --confirm` → clear GCS/DataStore → full re-ingest with new JSON tags. Indexing config is therefore "baked in" at registration time for the life of the corpus. Because registration is a one-time, pre-import, schema-document operation — not a per-document or runtime call — there is no capability the alpha `field_configs` object would add here even if it were writable: the GA `json_schema` annotation path already expresses the full filterable/retrievable/searchable configuration in exactly the single up-front step this architecture uses. The only real requirement is that the annotations be correct *before* the one-and-only import, which `_annotate_schema_for_indexing()` now guarantees.
+
+---
+
 ## 2026-07-09 (f)
 
 ### Changed

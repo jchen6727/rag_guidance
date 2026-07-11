@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import logging
 import sys
@@ -31,7 +32,6 @@ from google.cloud import discoveryengine_v1 as discoveryengine
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import settings
-from config.schema_loader import SchemaVocabulary
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -125,9 +125,17 @@ def create_datastore(dry_run: bool = False) -> str:
 def register_schema(datastore_name: str, dry_run: bool = False) -> None:
     """Update the DataStore schema to register ChunkMetadata fields as filterable.
 
-    Loads config/metadata_schema.json and submits it as the DataStore schema.
-    String enum fields (domain, doc_type) are registered with FILTERABLE indexing.
-    Integer fields (page_start, year_published) are registered with RANGE indexing.
+    Loads config/metadata_schema.json, annotates every field with Vertex AI
+    Search indexing keywords (`retrievable`/`indexable`/`searchable`) via
+    _annotate_schema_for_indexing(), and submits the annotated document as the
+    DataStore `json_schema`. `indexable` is what makes a scalar or array field
+    usable in filter expressions (AIP-160) and facets; string leaves are also
+    `searchable` for full-text. Array fields are annotated on their element
+    (`items`) leaf, so all 16 array metadata fields become filterable.
+
+    NOTE: indexing is configured *inside* the JSON schema, not via a separate
+    `discoveryengine.FieldConfig` object. `Schema.field_configs` is OUTPUT_ONLY
+    in every API surface (v1/v1beta/v1alpha) — see discovery_engine_comparison.md.
 
     Must be called BEFORE the first ImportDocuments run. Calling this after
     ingestion does not retroactively index existing documents.
@@ -151,35 +159,19 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
     client = discoveryengine.SchemaServiceClient(client_options=_client_options())
     schema_name = f"{datastore_name}/schemas/default_schema"
 
-    # Build field configs from metadata_schema.json properties. The integer and
-    # array field sets are derived from the schema itself (via SchemaVocabulary)
-    # rather than hard-coded, so this stays in sync with metadata_schema.json —
-    # the old {"keywords", "entities"} set referenced the removed `entities`
-    # field and missed every psychotherapy array field. See DISCREPANCIES.md.
-    vocab = SchemaVocabulary(schema_data)
-    field_configs: dict[str, discoveryengine.FieldConfig] = {}
-    int_fields = vocab.integer_fields
-    array_fields = vocab.array_fields
-
-    for field_name, field_def in schema_data.get("properties", {}).items():
-        if field_name in array_fields:
-            # Array fields are stored but not individually filterable
-            continue
-        config = discoveryengine.FieldConfig(
-            filterable=discoveryengine.FieldConfig.FilterableOption.FILTERABLE_ENABLED,
-            retrievable=discoveryengine.FieldConfig.RetrievableOption.RETRIEVABLE_ENABLED,
-            searchable=discoveryengine.FieldConfig.SearchableOption.SEARCHABLE_ENABLED,
-        )
-        if field_name in int_fields:
-            config.field_type = discoveryengine.FieldConfig.FieldType.INTEGER
-        else:
-            config.field_type = discoveryengine.FieldConfig.FieldType.TEXT
-        field_configs[field_name] = config
+    # Indexing is registered by embedding Vertex AI Search keywords into the
+    # JSON schema document itself (see _annotate_schema_for_indexing), NOT via
+    # discoveryengine.FieldConfig objects: `Schema.field_configs` is OUTPUT_ONLY
+    # in v1/v1beta/v1alpha, and the old code's FieldConfig(filterable=...) block
+    # referenced an API that does not exist. This annotation walk also covers the
+    # 16 array fields (annotated on their `items` leaf) that the old
+    # continue-past-array-fields loop left unregistered. See DISCREPANCIES.md and
+    # discovery_engine_comparison.md.
+    annotated_schema = _annotate_schema_for_indexing(schema_data)
 
     schema = discoveryengine.Schema(
         name=schema_name,
-        json_schema=json.dumps(schema_data),
-        field_configs=field_configs,
+        json_schema=json.dumps(annotated_schema),
     )
 
     try:
@@ -256,6 +248,51 @@ def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
     except AlreadyExists:
         logger.info("Search Engine already exists: %s", engine_name)
         return engine_name
+
+
+# Fields stored and returned but intentionally NOT registered as filterable.
+# Per config/metadata_schema.json notes.vertex_ai_search, `missingness` is
+# informational only and does not require filterable registration.
+_INFORMATIONAL_ONLY_FIELDS = frozenset({"missingness"})
+
+
+def _annotate_schema_for_indexing(schema_data: dict) -> dict:
+    """Return a copy of the JSON schema annotated with indexing keywords.
+
+    Vertex AI Search configures per-field indexing through keywords embedded in
+    the schema document (`retrievable`/`indexable`/`searchable`), because
+    `Schema.field_configs` is OUTPUT_ONLY on every API surface. This is the
+    GA-supported mechanism; see discovery_engine_comparison.md.
+
+    Keyword semantics:
+      - retrievable: field is returned on the SearchResult document. Required to
+        rebuild ChunkMetadata and to construct page-level citations.
+      - indexable: field is usable in filter expressions and facets. This is the
+        "filterable" requirement in metadata_schema.json notes.vertex_ai_search.
+      - searchable: field contributes to full-text search. Valid only for string
+        leaves; not set on integer/number/boolean fields.
+
+    Array fields carry their annotations on the element (`items`) leaf, so each
+    of the 16 array metadata fields becomes filterable — closing the gap the old
+    registration loop (which `continue`d past array fields) left open.
+
+    Args:
+        schema_data: Parsed metadata_schema.json (not mutated).
+
+    Returns:
+        Deep-copied schema dict with indexing keywords injected per property.
+    """
+    annotated = copy.deepcopy(schema_data)
+    for field_name, prop in annotated.get("properties", {}).items():
+        # For arrays the keywords attach to the element schema, not the array node.
+        leaf = prop.get("items", prop) if prop.get("type") == "array" else prop
+        leaf["retrievable"] = True
+        if field_name in _INFORMATIONAL_ONLY_FIELDS:
+            continue
+        leaf["indexable"] = True
+        if leaf.get("type") == "string":
+            leaf["searchable"] = True
+    return annotated
 
 
 def _load_metadata_schema() -> dict:
