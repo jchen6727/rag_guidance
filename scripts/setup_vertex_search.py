@@ -27,7 +27,7 @@ from pathlib import Path
 
 from google.api_core import retry as api_retry
 from google.api_core.client_options import ClientOptions
-from google.api_core.exceptions import AlreadyExists, DeadlineExceeded, ServiceUnavailable
+from google.api_core.exceptions import GoogleAPICallError, RetryError, AlreadyExists, DeadlineExceeded, ServiceUnavailable
 from google.cloud import discoveryengine_v1 as discoveryengine
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -175,24 +175,17 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
     )
 
     try:
-        client.update_schema(
-            schema=schema,
+        logger.info("Providing schema to Discovery Engine: %s", schema_name)
+        logger.info("Schema: %s", annotated_schema)
+        operation = client.update_schema(
+            request={"schema": schema},
             timeout=_LRO_RPC_TIMEOUT,
             retry=_RETRY_TRANSIENT,
         )
-        logger.info("Schema updated: %s", schema_name)
-    except Exception:
-        try:
-            client.create_schema(
-                parent=datastore_name,
-                schema=schema,
-                schema_id="default_schema",
-                timeout=_LRO_RPC_TIMEOUT,
-                retry=_RETRY_TRANSIENT,
-            )
-            logger.info("Schema created: %s", schema_name)
-        except AlreadyExists:
-            logger.info("Schema already exists, no changes made: %s", schema_name)
+        response = operation.result(timeout=_LRO_RPC_TIMEOUT)
+        logger.info("Schema successfully loaded: %s", response.name)
+    except AlreadyExists: # for other errors should raise through
+        logger.info("Schema already exists, no changes made: %s", schema_name)
 
 
 def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
