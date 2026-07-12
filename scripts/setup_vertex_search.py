@@ -125,13 +125,15 @@ def create_datastore(dry_run: bool = False) -> str:
 def register_schema(datastore_name: str, dry_run: bool = False) -> None:
     """Update the DataStore schema to register ChunkMetadata fields as filterable.
 
-    Loads config/metadata_schema.json, annotates every field with Vertex AI
-    Search indexing keywords (`retrievable`/`indexable`/`searchable`) via
-    _annotate_schema_for_indexing(), and submits the annotated document as the
-    DataStore `json_schema`. `indexable` is what makes a scalar or array field
-    usable in filter expressions (AIP-160) and facets; string leaves are also
-    `searchable` for full-text. Array fields are annotated on their element
-    (`items`) leaf, so all 16 array metadata fields become filterable.
+    Loads config/metadata_schema.json and converts it into a Discovery Engine
+    `json_schema` via _create_discoveryengine_schema(): every field is annotated
+    with Vertex AI Search indexing keywords (`retrievable`/`indexable`/
+    `searchable`) and nullable union types (`["string", "null"]`) are collapsed
+    to the single concrete type Discovery Engine requires. `indexable` is what
+    makes a scalar or array field usable in filter expressions (AIP-160) and
+    facets; string leaves are also `searchable` for full-text. Array fields are
+    annotated on their element (`items`) leaf, so all 16 array metadata fields
+    become filterable.
 
     NOTE: indexing is configured *inside* the JSON schema, not via a separate
     `discoveryengine.FieldConfig` object. `Schema.field_configs` is OUTPUT_ONLY
@@ -160,23 +162,23 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
     schema_name = f"{datastore_name}/schemas/default_schema"
 
     # Indexing is registered by embedding Vertex AI Search keywords into the
-    # JSON schema document itself (see _annotate_schema_for_indexing), NOT via
+    # JSON schema document itself (see _create_discoveryengine_schema), NOT via
     # discoveryengine.FieldConfig objects: `Schema.field_configs` is OUTPUT_ONLY
     # in v1/v1beta/v1alpha, and the old code's FieldConfig(filterable=...) block
-    # referenced an API that does not exist. This annotation walk also covers the
+    # referenced an API that does not exist. This conversion also covers the
     # 16 array fields (annotated on their `items` leaf) that the old
     # continue-past-array-fields loop left unregistered. See DISCREPANCIES.md and
     # discovery_engine_comparison.md.
-    annotated_schema = _annotate_schema_for_indexing(schema_data)
+    de_schema = _create_discoveryengine_schema(schema_data)
 
     schema = discoveryengine.Schema(
         name=schema_name,
-        json_schema=json.dumps(annotated_schema),
+        json_schema=json.dumps(de_schema),
     )
 
     try:
         logger.info("Providing schema to Discovery Engine: %s", schema_name)
-        logger.info("Schema: %s", annotated_schema)
+        logger.info("Schema: %s", de_schema)
         operation = client.update_schema(
             request={"schema": schema},
             timeout=_LRO_RPC_TIMEOUT,
@@ -248,44 +250,119 @@ def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
 # informational only and does not require filterable registration.
 _INFORMATIONAL_ONLY_FIELDS = frozenset({"missingness"})
 
+# JSON-Schema draft used by Discovery Engine custom schemas.
+_DISCOVERYENGINE_SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
 
-def _annotate_schema_for_indexing(schema_data: dict) -> dict:
-    """Return a copy of the JSON schema annotated with indexing keywords.
+_JSON_NULL = "null"
 
-    Vertex AI Search configures per-field indexing through keywords embedded in
-    the schema document (`retrievable`/`indexable`/`searchable`), because
-    `Schema.field_configs` is OUTPUT_ONLY on every API surface. This is the
-    GA-supported mechanism; see discovery_engine_comparison.md.
 
-    Keyword semantics:
-      - retrievable: field is returned on the SearchResult document. Required to
-        rebuild ChunkMetadata and to construct page-level citations.
-      - indexable: field is usable in filter expressions and facets. This is the
-        "filterable" requirement in metadata_schema.json notes.vertex_ai_search.
-      - searchable: field contributes to full-text search. Valid only for string
-        leaves; not set on integer/number/boolean fields.
+def _concrete_type(json_type: object) -> object:
+    """Collapse a JSON-Schema `type` declaration to a single Discovery Engine type.
 
-    Array fields carry their annotations on the element (`items`) leaf, so each
-    of the 16 array metadata fields becomes filterable — closing the gap the old
-    registration loop (which `continue`d past array fields) left open.
+    `config/metadata_schema.json` marks optional scalars with a *union* type such
+    as ``["string", "null"]`` / ``["integer", "null"]`` — JSON-Schema's idiom for
+    "nullable". Discovery Engine's schema requires `type` to be a **single**
+    string (one of string/number/integer/boolean/array/object/datetime/
+    geolocation); a JSON list is not an accepted value and the union carries no
+    indexing meaning. This returns the first non-null member, so
+    ``["integer", "null"]`` -> ``"integer"`` and ``"string"`` passes through
+    unchanged.
+
+    Args:
+        json_type: The `type` value from a schema property or items node.
+
+    Returns:
+        The concrete single type string, or the input unchanged if it is not a
+        union list.
+    """
+    if isinstance(json_type, list):
+        non_null = [t for t in json_type if t != _JSON_NULL]
+        return non_null[0] if non_null else None
+    return json_type
+
+
+def _create_discoveryengine_schema(schema_data: dict) -> dict:
+    """Convert `config/metadata_schema.json` into a Discovery Engine `json_schema`.
+
+    `metadata_schema.json` is authored as a JSON-Schema *validation* document
+    (enums, `minimum`/`maximum`, `pattern`, nullable union types, custom
+    `notes`). Discovery Engine wants a *field-configuration* document: the same
+    property tree, but with per-field indexing keywords and a single concrete
+    `type` per field. This function performs that translation without mutating
+    the source schema.
+
+    Two conversions happen here:
+
+    1. **Indexing keywords.** Every field's leaf node is annotated with the
+       Vertex AI Search booleans — `retrievable`, `indexable`, `searchable` —
+       because `Schema.field_configs` is OUTPUT_ONLY on every API surface and
+       indexing must be expressed *inside* the schema document (see
+       discovery_engine_comparison.md and CHANGELOG 2026-07-10). Keyword
+       semantics:
+         - retrievable: field is returned on the SearchResult document. Required
+           to rebuild ChunkMetadata and to construct page-level citations.
+         - indexable: field is usable in AIP-160 filter expressions and facets —
+           the "filterable" requirement in notes.vertex_ai_search. Set on every
+           field except the informational-only `missingness`.
+         - searchable: field contributes to full-text search. Set only on string
+           leaves (not integer/number/boolean).
+
+       For `type: array` fields the keywords attach to the element (`items`)
+       leaf — this is the placement Discovery Engine documents and expects for
+       arrays of primitives, and is what makes all 16 array metadata fields
+       (therapeutic_modality, session_event_tags, clinical_presentation,
+       risk_dimension_tags, ...) individually filterable. Note this deliberately
+       contradicts schema_notes.md, whose "Strict Array Constraint" (flags at the
+       property level, never inside `items`) is inverted relative to Google's
+       live documentation; following it would silently leave every array field
+       unregistered and break the RTA event filter. See metadata_summary.md and
+       architecture_bootstrap.md.
+
+    2. **Nullable union collapse.** Optional scalars declared as
+       ``["string", "null"]`` / ``["integer", "null"]`` are collapsed to their
+       concrete type via `_concrete_type`, because Discovery Engine rejects a
+       list-valued `type`. This affects year_published, sample_size,
+       practice_recommendation_level, training_level_required, and study_type.
+
+    The returned document keeps each property's `enum`/`description` (harmless to
+    Discovery Engine, useful for humans) but drops the source-schema top-level
+    scaffolding that is not part of a field-config schema (`title`,
+    `description`, custom `notes`, `additionalProperties`).
 
     Args:
         schema_data: Parsed metadata_schema.json (not mutated).
 
     Returns:
-        Deep-copied schema dict with indexing keywords injected per property.
+        A Discovery Engine-ready schema dict suitable for `Schema.json_schema`.
     """
-    annotated = copy.deepcopy(schema_data)
-    for field_name, prop in annotated.get("properties", {}).items():
+    properties_out: dict = {}
+    for field_name, prop in schema_data.get("properties", {}).items():
+        prop = copy.deepcopy(prop)
+        is_array = prop.get("type") == "array"
+        # Collapse any nullable union on the property itself first.
+        prop["type"] = _concrete_type(prop.get("type"))
+
         # For arrays the keywords attach to the element schema, not the array node.
-        leaf = prop.get("items", prop) if prop.get("type") == "array" else prop
+        if is_array:
+            leaf = prop.setdefault("items", {})
+            leaf["type"] = _concrete_type(leaf.get("type"))
+        else:
+            leaf = prop
+
         leaf["retrievable"] = True
-        if field_name in _INFORMATIONAL_ONLY_FIELDS:
-            continue
-        leaf["indexable"] = True
-        if leaf.get("type") == "string":
-            leaf["searchable"] = True
-    return annotated
+        if field_name not in _INFORMATIONAL_ONLY_FIELDS:
+            leaf["indexable"] = True
+            if leaf.get("type") == "string":
+                leaf["searchable"] = True
+
+        properties_out[field_name] = prop
+
+    return {
+        "$schema": _DISCOVERYENGINE_SCHEMA_DRAFT,
+        "type": "object",
+        "properties": properties_out,
+        "required": list(schema_data.get("required", [])),
+    }
 
 
 def _load_metadata_schema() -> dict:

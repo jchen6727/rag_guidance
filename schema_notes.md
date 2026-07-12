@@ -1,5 +1,11 @@
 # Discovery Engine Schema Instructions
 
+> **Sources (Google Cloud, verified 2026-07-12):**
+> - [Configure field settings](https://docs.cloud.google.com/generative-ai-app-builder/docs/configure-field-settings)
+> - [Provide or auto-detect a schema](https://docs.cloud.google.com/generative-ai-app-builder/docs/provide-schema)
+>
+> **Correction (2026-07-12):** the "Strict Array Constraint" section below previously stated that indexing flags must sit at the property level and never inside `items` for array fields. That was **inverted** — Google's documentation places the flags **inside `items`** for arrays of primitives. See the corrected section and `architecture_bootstrap.md` §0.
+
 ## Property-Level Discovery Engine Annotations
 
 Discovery Engine flags field behavior using specific, boolean properties placed *directly* inside the parent property object block.
@@ -10,22 +16,48 @@ Discovery Engine flags field behavior using specific, boolean properties placed 
 * `"searchable"`: (boolean) Controls if the field text is indexed for unstructured natural language keyword search. Only valid for `"type": "string"` or arrays of strings.
 * `"dynamicFacetable"`: (boolean) Enables automated structural faceting.
 
-### Strict Array Constraint:
-* **CRITICAL ERROR TO AVOID**: Never place `retrievable`, `indexable`, or `searchable` inside the nested `"items"` configuration block of an array type property.
-* **CORRECT LOCATION**: Array field flags must reside at the property level alongside the `"type": "array"` declaration.
+### Array Field Placement (arrays of primitives):
+For an array of primitives (e.g. `array` of `string`), the indexing flags
+(`retrievable`, `indexable`, `searchable`, `dynamicFacetable`, and
+`keyPropertyMapping`) reside **inside the nested `"items"` block**, alongside the
+element `"type"` — **not** at the property level. This is the placement Google
+documents and that makes each array element value individually filterable /
+searchable. See the [`amenities` example in *Configure field settings*](https://docs.cloud.google.com/generative-ai-app-builder/docs/configure-field-settings)
+and the [`categories` / `keyPropertyMapping` example in *Provide or auto-detect a schema*](https://docs.cloud.google.com/generative-ai-app-builder/docs/provide-schema).
+
+> **Do not** move these flags to the property level for arrays of primitives — that leaves the field unregistered as filterable and silently breaks any `ANY(...)` filter over it. (An earlier version of this note had this backwards.)
 
 *Correct Array Pattern Example:*
 ```json
 "example_tags": {
   "type": "array",
   "items": {
-    "type": "string"
-  },
-  "retrievable": true,
-  "indexable": true,
-  "searchable": true
+    "type": "string",
+    "retrievable": true,
+    "indexable": true,
+    "searchable": true
+  }
 }
 ```
+
+*As documented by Google (`Configure field settings`), all element-level flags — including `completable` and `dynamicFacetable` — live inside `items`:*
+```json
+"amenities": {
+  "type": "array",
+  "items": {
+    "type": "string",
+    "completable": true,
+    "dynamicFacetable": true,
+    "indexable": true,
+    "retrievable": true,
+    "searchable": true
+  }
+}
+```
+
+Note this is consistent with the "Document Hierarchy Structuring" section below:
+flags always attach to the **leaf** element inside `items` (or inside a nested
+object's `properties`), never to the array/object container itself.
 
 ## Custom Vector Search Embeddings (Hybrid/Vector Search)
 

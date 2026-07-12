@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-07-12
+
+### Added
+
+- **`scripts/setup_vertex_search.py::_create_discoveryengine_schema()`** — replaces `_annotate_schema_for_indexing()` as the single converter from `config/metadata_schema.json` to the Discovery Engine `json_schema` submitted by `register_schema()`. It does two things the old annotator did not fully cover:
+  1. **Correct indexing-keyword placement** — `retrievable`/`indexable`/`searchable` on the property for scalars and on the **`items` leaf** for arrays, so all 16 array metadata fields (`therapeutic_modality`, `session_event_tags`, `clinical_presentation`, `risk_dimension_tags`, …) are filterable; `missingness` stays retrievable-only.
+  2. **Nullable union-type collapse** — new helper `_concrete_type()` collapses JSON-Schema union types (`["string","null"]` / `["integer","null"]`) to the single concrete type Discovery Engine requires. Discovery Engine rejects a list-valued `type`, and the old `leaf.get("type") == "string"` searchable gate also silently skipped these string fields. Affects `year_published`, `sample_size`, `practice_recommendation_level`, `training_level_required`, `study_type` (the latter three now correctly `searchable`).
+
+  The emitted document is a clean field-config schema (`$schema`, `type`, `properties`, `required`); source-schema scaffolding not part of a field-config schema (`title`, `description`, custom `notes`, `additionalProperties`) is dropped. Verified output: 37 fields — 37 retrievable, 36 indexable, 31 searchable — with no residual union types and array flags on `items`.
+
+- **`metadata_summary.md`** — catalogue of implementation risks for the keyword→corpus retrieval and ingestion-tagging path, each with a clinician-facing explanation and a technical section (code snippets + Discovery Engine API docs). Covers the array-flag placement contradiction, nullable union types, tagging quality as the true event-relevance ceiling, coercion/`doc_type` sentinel edge cases, unwired front-matter filtering, the two hard safety pre-filters, non-enforcement of enums by Discovery Engine, one-shot immutability, field-count limits, and the optional `keyPropertyMapping` optimization.
+- **`architecture_bootstrap.md`** — action-oriented reconciliation of `DISCREPANCIES.md` for implementing agents: the authoritative resolution of the `schema_notes.md` vs. Google-docs conflict, what was completed this pass, the open decisions (`doc_type` `""` sentinel, front-matter wiring, searcher round-trip, `SearchFilter` array + safety pre-filters, tagging eval), the pre-ingest verification gate, and DO/DON'T rules.
+
+### Fixed / Investigated — array indexing-flag placement (`schema_notes.md` is inverted)
+
+- `schema_notes.md` §"Strict Array Constraint" instructs that array indexing flags must sit at the **property level** and "never" inside `items`. This is **inverted** relative to Google's live documentation (*Configure field settings* and *Provide or auto-detect a schema*), which place `retrievable`/`indexable`/`searchable`/`keyPropertyMapping` **inside `items`** for arrays of primitives (the documented `amenities` example), matching `discovery_engine_comparison.md` §2b and the project's empirical check against `google-cloud-discoveryengine==0.20.0`. Following `schema_notes.md` would leave every array field unregistered as filterable and silently break the RTA event/modality/risk filters — a clinical-safety-relevant regression. `_create_discoveryengine_schema()` retains the correct `items`-leaf placement; `schema_notes.md`'s array rule is documented as superseded in `architecture_bootstrap.md` §0.
+
+### Documentation updates
+
+- **`DISCREPANCIES.md`** — reconciliation pass: all `#DONE` items re-verified against the codebase and **removed** (dead `watcher.py`; `requirements.txt` `catchup_scan`; the biomedical→psychotherapy `metadata_gen.py`/`models.py` migration; array-field filterable registration). Added a reconciliation banner pointing to `metadata_summary.md` / `architecture_bootstrap.md`, and corrected two now-stale `watcher.py` references (the file is deleted, not stubbed). Open/deferred/by-design items retained.
+
+---
+
 ## 2026-07-10
 
 ### Investigated — is `FieldConfig` reachable via `discoveryengine_v1alpha`?
