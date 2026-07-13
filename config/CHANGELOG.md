@@ -1,5 +1,66 @@
 # Config Changelog
 
+## 2026-06-25 — Representation and implementation field additions
+
+Added nine fields to `metadata_schema.json` covering source-level representation and study-design provenance. All fields describe the source document rather than the content of individual chunks. 
+
+Representation fields (describing the source's development context):
+- population_focus — who the source was developed/validated for (enum matching patient_population, not_reported replacing not_specified)
+- source_language — language(s) of the source and any translation (free text array)
+- setting — where it was developed/tested: community, academic_medical_center, safety_net, outpatient_clinic, inpatient, school_based, primary_care, telehealth, urban, rural, suburban
+- adaptation_status — standard / culturally_adapted / resource_constrained / translated / not_reported
+- missingness — free-text notes on what the source does not report
+- presentation_coverage — which cultural presentation dimensions the source addresses: somatic_expression, spiritual_religious, migration_acculturation, discrimination_stress, family_relational_framing, general_cultural
+
+Implementation fields:
+- study_type — overall study design (rct, meta_analysis, clinical_manual, etc.) — document-level, distinct from chunk-level evidence_base
+- sample_size — total study N, nullable
+- intended_use_context — in_session_support / assessment / education / supervision / self_study
+
+Notes updated: vertex_ai_search (5 new filterable array fields), recommended_change_items, new representation_and_implementation_fields entry.
+
+ISSUES.md — 8 new issues (I-16 through I-23):
+- I-16 [CODE] — population_focus vs patient_population extraction prompt disambiguation
+- I-17 [CODE] — missingness inference requires explicit Gemini absence-detection prompting
+- I-18 [DESIGN] — adaptation_status=culturally_adapted interaction with corpus_scope routing
+- I-19 [BLOCKER] — 5 new array fields need Vertex AI Search filterable registration
+- I-20 [CODE] — presentation_coverage vs session_event_tags extraction disambiguation
+- I-21 [CODE] — study_type vs evidence_base extraction disambiguation
+- I-22 [BLOCKER] — existing 3 corpus documents need re-extraction for new fields
+- I-23 [DESIGN] — evidence_level from proposed changes interpreted as already covered; clarify if otherwise intended
+
+### metadata_schema.json
+
+**Fields added — representation:**
+
+| Field | Type | Description |
+|---|---|---|
+| `population_focus` | array (enum) | Who the source was developed, adapted, piloted, or intended for. Distinct from `patient_population` (who the evidence applies to). Enum matches `patient_population` with `not_reported` replacing `not_specified`. |
+| `source_language` | array (string) | Language(s) of the source and any translation or adaptation. Free text; default `["English"]`. |
+| `setting` | array (enum) | Where the source was developed or tested: community, academic_medical_center, safety_net, outpatient_clinic, inpatient, school_based, primary_care, telehealth, urban, rural, suburban, not_reported. |
+| `adaptation_status` | string (enum) | standard, culturally_adapted, resource_constrained, translated, not_reported. Culturally adapted and resource-constrained sources may warrant `corpus_scope=rta_and_asa` even when the base protocol defaults to `asa_only`. |
+| `missingness` | array (string) | Free-text notes on what the source does not report (demographic data, fidelity monitoring, adverse events, etc.). Informational; surfaced alongside retrieved content when non-empty. Not registered as a filterable Vertex AI attribute. |
+| `presentation_coverage` | array (enum) | Source-level coverage of cultural presentation dimensions: somatic_expression, spiritual_religious, migration_acculturation, discrimination_stress, family_relational_framing, general_cultural, none_reported. Distinct from `session_event_tags` (chunk-level, describing in-session events a passage addresses). |
+
+**Fields added — implementation:**
+
+| Field | Type | Description |
+|---|---|---|
+| `study_type` | string (enum, nullable) | Overall study design of the source document, set once per document. Enum: randomized_controlled_trial, quasi_experimental, open_trial, meta_analysis, systematic_review, qualitative_study, case_series, single_case_experimental, case_report, normative_development, theoretical_position_paper, clinical_manual, guideline_document. Distinct from `evidence_base` (chunk-level). |
+| `sample_size` | integer (nullable) | Total study sample N. Null for non-empirical sources. For meta-analyses, pooled N across included studies. |
+| `intended_use_context` | array (enum) | High-level functional use: in_session_support, assessment, education, supervision, self_study. Distinct from `doc_type` (what the document is) and `target_audience` (who it is written for). |
+
+**Note on `evidence_level`:** `proposed_changes_metadata_schema.md` listed "evidence level" as an implementation field. This was interpreted as already covered by the existing `practice_recommendation_level` (recommendation strength) and the new `study_type` (study design). `evidence_level` as a GRADE A/B/C/D field was explicitly removed in the 2026-06-24 migration. If a distinct field was intended, see I-23 in `config/ISSUES.md`.
+
+**Notes section updated:**
+- `vertex_ai_search`: added `population_focus`, `setting`, `presentation_coverage`, `intended_use_context`, `source_language` to the filterable array fields list; noted `missingness` as informational only.
+- `recommended_change_items`: recorded representation and implementation field additions from `proposed_changes_metadata_schema.md`.
+- Added `representation_and_implementation_fields` note entry describing the document-level vs. chunk-level distinction.
+
+**Issues logged:** I-16 through I-23 in `config/ISSUES.md`. I-19 is a [BLOCKER] for new array field registration in Vertex AI Search.
+
+---
+
 ## 2026-06-25 — CBT/DBT/IPT scope pruning
 
 Pruned `metadata_schema.json` and `prompt_config.yaml` to reflect the scope of competence of a psychotherapist trained in CBT, DBT, and/or IPT. The guiding principle: every domain, modality tag, and persona must represent something a CBT/DBT/IPT-trained clinician is both qualified to deliver and ethically permitted to claim competence in. Modalities requiring separate certification or belonging to a different therapeutic tradition are removed from the schema enums and from the persona list. Where a removed modality's techniques appear in passing within a kept persona (e.g. psychodynamic formulation concepts within a case formulation persona), the persona is reworded to distinguish *understanding* from *delivery*.
