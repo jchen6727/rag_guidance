@@ -37,6 +37,22 @@ class Settings:
         Defaults to 'global' for Vertex AI Search."""
         return os.environ.get("GCP_LOCATION", "global")
 
+    @property
+    def gcs_datastore_region(self) -> str:
+        """
+        Derives the macro multi-region string required for Discovery Engine APIs
+        ('us', 'eu', or 'global') from the underlying granular gcp_location.
+        """
+        loc = self.gcp_location.strip().lower()    
+        # United States prefixes
+        if loc.startswith("us"):
+            return "us"
+        # European prefixes (safely catches both macro 'eu' and regional 'europe-west1')
+        if loc.startswith(("eu", "europe")):
+            return "eu"
+        # Fallback for explicit 'global' or unexpected local regions
+        return "global"        
+    
     # -----------------------------------------------------------------------
     # Google Cloud Storage
     # -----------------------------------------------------------------------

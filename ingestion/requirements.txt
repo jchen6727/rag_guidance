@@ -6,7 +6,7 @@
 #   google-cloud-aiplatform  — query/generation path only
 #   tqdm, click              — scripts/ only
 #   pytest*                  — testing only
-#   watchdog                 — observer-based path only; not required for CorpusWatcher.catchup_scan()
+
 
 # ---------------------------------------------------------------------------
 # Google Cloud (indexer.py, uploader.py, extractor.py, metadata_gen.py)

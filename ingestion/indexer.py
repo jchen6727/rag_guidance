@@ -21,7 +21,9 @@ import logging
 import time
 from typing import Optional
 
-from google.cloud import discoveryengine_v1beta as discoveryengine
+from google.api_core import retry as api_retry
+from google.api_core.exceptions import DeadlineExceeded, ServiceUnavailable
+from google.cloud import discoveryengine_v1 as discoveryengine
 from google.longrunning.operations_pb2 import GetOperationRequest
 
 from models import ImportResult
@@ -30,6 +32,14 @@ logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL_SECONDS = 15
 _DEFAULT_TIMEOUT_SECONDS = 600
+_RPC_TIMEOUT = 300
+_RETRY_TRANSIENT = api_retry.Retry(
+    predicate=api_retry.if_exception_type(DeadlineExceeded, ServiceUnavailable),
+    initial=2.0,
+    maximum=30.0,
+    multiplier=2.0,
+    deadline=120.0,
+)
 
 
 class VertexSearchIndexer:
@@ -105,7 +115,11 @@ class VertexSearchIndexer:
             ),
         )
 
-        operation = client.import_documents(request=request)
+        operation = client.import_documents(
+            request=request,
+            timeout=_RPC_TIMEOUT,
+            retry=_RETRY_TRANSIENT,
+        )
         op_name = operation.operation.name
         logger.info("Import LRO started for doc %s: %s", doc_id, op_name)
         return op_name
@@ -144,7 +158,10 @@ class VertexSearchIndexer:
                     f"Import LRO {operation_name} timed out after {timeout}s"
                 )
 
-            op = ops_client.get_operation(GetOperationRequest(name=operation_name))
+            op = ops_client.get_operation(
+                GetOperationRequest(name=operation_name),
+                timeout=_RPC_TIMEOUT,
+            )
 
             if op.done:
                 if op.HasField("error"):
@@ -182,7 +199,11 @@ class VertexSearchIndexer:
         name = (
             f"{self._datastore_name}/branches/default_branch/documents/{chunk_id}"
         )
-        client.delete_document(name=name)
+        client.delete_document(
+            name=name,
+            timeout=_RPC_TIMEOUT,
+            retry=_RETRY_TRANSIENT,
+        )
         logger.debug("Deleted document: %s", chunk_id)
 
     def list_documents(self, page_size: int = 100) -> list[str]:
@@ -201,7 +222,14 @@ class VertexSearchIndexer:
         request = discoveryengine.ListDocumentsRequest(
             parent=parent, page_size=page_size
         )
-        return [doc.id for doc in client.list_documents(request=request)]
+        return [
+            doc.id
+            for doc in client.list_documents(
+                request=request,
+                timeout=_RPC_TIMEOUT,
+                retry=_RETRY_TRANSIENT,
+            )
+        ]
 
     def _get_client(self) -> discoveryengine.DocumentServiceClient:
         """Lazy-initialize and return the Discovery Engine document service client.

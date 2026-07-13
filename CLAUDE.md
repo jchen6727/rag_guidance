@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-**Many source files are intentional stubs.** Every method body is `raise NotImplementedError`. The scaffolding, type signatures, docstrings, and config files are complete and authoritative — implementation has not started. Do not treat stub bodies as bugs.
+**Partially implemented.** The **ingest path is fully implemented** (`ingestion/extractor.py`, `chunker.py`, `metadata_gen.py`, `uploader.py`, `indexer.py`, `scanner.py`), along with `models.py`, `config/settings.py`, `scripts/`, and most of `tests/`. The **query path remains stubbed** (`raise NotImplementedError` in every method body): `generation/`, `retrieval/`, and `rta_prompt/`. `ingestion/watcher.py` is a superseded stub (replaced by `scanner.py`) and should be treated as dead. Scaffolding, type signatures, docstrings, and config files are complete and authoritative for the stubbed modules — do not treat those stub bodies as bugs.
+
+**Domain note:** the pipeline targets **psychotherapy guidance for CBT/DBT/IPT-trained clinicians** with two modes, RTA (real-time, in-session) and ASA (after-session). See `BOOTSTRAP.md` and `config/metadata_schema.json`. Parts of this file still describe an older generic-biomedical framing.
 
 ## Commands
 
@@ -74,18 +76,19 @@ The `Chunk.chunk_id` canonical form is `"{doc_id}_{chunk_index:05d}"`. This ID i
 |---|---|
 | `config/settings.py` | Singleton `settings` object; reads env vars lazily; call `settings.validate_all()` at startup |
 | `config/metadata_schema.json` | Canonical metadata field definitions; **used both for Gemini extraction prompts and Vertex AI Search schema registration** |
-| `config/chunk_config.yaml` | Chunking parameters (token budget, similarity threshold, header patterns); **not yet wired to `ChunkerConfig`** — see Known Issues |
-| `config/prompt_config.yaml` | Expert persona templates for 9 medical/scientific domains; `PromptBuilder` selects by domain key, falls back to `default` |
+| `config/schema_loader.py` | `SchemaVocabulary` — structured loader that derives the controlled vocabulary (enums, array fields, defaults, coercion) from `metadata_schema.json`. Single source of truth consumed by `metadata_gen.py` and `setup_vertex_search.py` so the code never drifts from the schema |
+| `config/chunk_config.yaml` | Chunking parameters (token budget, similarity threshold, header patterns); loaded via `ChunkerConfig.from_yaml()` |
+| `config/prompt_config.yaml` | Psychotherapy persona templates (CBT/DBT/IPT scope): `default` plus 10 domain personas; split `retrieval_instruction_rta`/`retrieval_instruction_asa` blocks. `PromptBuilder` selects by domain key, falls back to `default` |
 
 ### Chunking Strategy (`ingestion/chunker.py`)
 
 Two-pass approach — structural split first (section headers via regex), then semantic sub-split within sections (sentence-transformer cosine similarity, threshold from `ChunkerConfig.semantic_similarity_threshold`). The embedding model is lazy-loaded on first call. Chunking quality gates all downstream retrieval.
 
-`ChunkerConfig` has Python defaults and is not yet loaded from `config/chunk_config.yaml` (Known Issue #1), but `pyyaml` is already a dependency — no new packages needed to implement `ChunkerConfig.from_yaml()`.
+`ChunkerConfig` has Python defaults and is also loaded from `config/chunk_config.yaml` via the `ChunkerConfig.from_yaml()` classmethod. Note `skip_doc_types` and `front_matter_indicators` are defined on `ChunkerConfig` (and in the YAML) but are **not yet consumed** by `ContextAwareChunker` — front-matter filtering is not wired.
 
 ### Metadata Generation (`ingestion/metadata_gen.py`)
 
-Gemini is called once per chunk. The response is validated against `ChunkMetadata` with type coercion (common case: `year_published` arrives as string). Falls back to `_fallback_extraction()` on any Gemini failure — ingestion never hard-fails due to a bad API response. The `doc_id`, `page_start`, `page_end`, and `chunk_index` fields are **always overridden from the `Chunk` object**, never trusted from Gemini output.
+Gemini is called once per chunk. The response is validated and coerced against the psychotherapy schema via `config/schema_loader.py::SchemaVocabulary` (loaded from `metadata_schema.json` at construction), then instantiated as `ChunkMetadata`. The controlled vocabulary is **not** hard-coded in `metadata_gen.py` — enum validity, array normalization, integer parsing, and defaults all come from the schema, and keys absent from the schema (e.g. the removed `entities`/`evidence_level`) are dropped. Common coercions: `year_published` string→int; single string→list for array fields; unknown `domain`→`other`, unknown `doc_type`→`""`. Falls back to `_fallback_extraction()` on any Gemini failure — ingestion never hard-fails due to a bad API response. The `doc_id`, `page_start`, `page_end`, and `chunk_index` fields are **always overridden from the `Chunk` object**, never trusted from Gemini output.
 
 ### Vertex AI Search Indexer (`ingestion/indexer.py`)
 
@@ -99,9 +102,9 @@ Gemini is called once per chunk. The response is validated against `ChunkMetadat
 
 These are confirmed defects in the scaffolding that must be resolved:
 
-1. **`ChunkerConfig` is not loaded from YAML.** The class has Python defaults; `chunk_config.yaml` is a separate document. Add a `ChunkerConfig.from_yaml(path)` classmethod to bridge them, or remove the YAML claim from the docstring.
+1. **RESOLVED — `ChunkerConfig.from_yaml()` implemented.** `ChunkerConfig` now loads from `chunk_config.yaml`. Remaining gap: `skip_doc_types`/`front_matter_indicators` are loaded but never used by `ContextAwareChunker`.
 
-2. **`{n_passages}` template variable undocumented.** `config/prompt_config.yaml` uses `{n_passages}` in `retrieval_instruction` but it is absent from the variable legend at the top of the file. `PromptBuilder` must inject it.
+2. **RESOLVED — `{n_passages}` documented.** `config/prompt_config.yaml` now lists `{n_passages}` in the variable legend and uses it in both `retrieval_instruction_rta` and `retrieval_instruction_asa`. `PromptBuilder` (still a stub) must inject it.
 
 3. **`CitationBuilder` import missing from `response_gen.py`.** The `generate()` docstring implies it delegates to `CitationBuilder` internally, but no import exists. Decide: does `ResponseGenerator` own the citation step, or does the caller chain `CitationBuilder` separately? The current `generation/__init__.py` exports both as peers, suggesting the latter.
 

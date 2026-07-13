@@ -25,12 +25,21 @@ from models import Chunk, ChunkMetadata
 # ---------------------------------------------------------------------------
 
 
+_REAL_SCHEMA_PATH = (
+    Path(__file__).parent.parent / "config" / "metadata_schema.json"
+)
+
+
 @pytest.fixture
-def generator(tmp_path: Path) -> MetadataGenerator:
-    """MetadataGenerator pointed at a minimal test schema."""
-    schema_path = tmp_path / "schema.json"
-    schema_path.write_text('{"properties": {}, "required": []}')
-    return MetadataGenerator(model_name="gemini-1.5-flash", schema_path=schema_path)
+def generator() -> MetadataGenerator:
+    """MetadataGenerator pointed at the authoritative psychotherapy schema.
+
+    Coercion is schema-driven (config/schema_loader.py), so the tests exercise
+    the real controlled vocabulary rather than a placeholder schema.
+    """
+    return MetadataGenerator(
+        model_name="gemini-1.5-flash", schema_path=_REAL_SCHEMA_PATH
+    )
 
 
 def make_chunk(text: str = "Sample clinical text.", doc_id: str = "abc123") -> Chunk:
@@ -50,14 +59,13 @@ def _valid_gemini_response(chunk: Chunk) -> dict:
     return {
         "doc_id": chunk.doc_id,
         "source_file": "test.pdf",
-        "domain": "other",
-        "doc_type": "textbook",
+        "domain": "cognitive_behavioral",
+        "doc_type": "treatment_manual",
         "page_start": chunk.page_start,
         "page_end": chunk.page_end,
         "chunk_index": chunk.chunk_index,
         "title": "Test Title",
         "keywords": ["keyword1"],
-        "entities": [],
     }
 
 

@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
-from google.cloud import discoveryengine_v1beta as discoveryengine
+from google.cloud import discoveryengine_v1 as discoveryengine
 
 from models import ChunkMetadata, SearchResult
 

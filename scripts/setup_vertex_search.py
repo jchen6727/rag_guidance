@@ -24,14 +24,50 @@ import logging
 import sys
 from pathlib import Path
 
-from google.cloud import discoveryengine_v1beta as discoveryengine
-from google.api_core.exceptions import AlreadyExists
+from google.api_core import retry as api_retry
+from google.api_core.client_options import ClientOptions
+from google.api_core.exceptions import AlreadyExists, DeadlineExceeded, ServiceUnavailable
+from google.cloud import discoveryengine_v1 as discoveryengine
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import settings
+from config.schema_loader import SchemaVocabulary
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+_LRO_RPC_TIMEOUT = 300  # seconds for the initial RPC that starts a long-running operation
+_LRO_RESULT_TIMEOUT = 600  # seconds to wait for the LRO (whole process) to complete -> 300 (5 minutes) increased to 600 (10 minutes)
+_RETRY_TRANSIENT = api_retry.Retry(
+    predicate=api_retry.if_exception_type(DeadlineExceeded, ServiceUnavailable),
+    initial=2.0,
+    maximum=30.0,
+    multiplier=2.0,
+    deadline=300.0, # retry extended 120 -> 300 in case GCP scale up
+)
+
+
+def _client_options() -> ClientOptions | None:
+    """Resolve the regional API endpoint for settings.gcp_location.
+
+    The Discovery Engine client libraries default to the *global* endpoint
+    (discoveryengine.googleapis.com) regardless of settings.gcp_location. If
+    GCP_LOCATION is a non-global region (e.g. "us", "eu"), calls made against
+    the global endpoint for a regional parent resource are misrouted: they
+    don't fail fast, they hang until the RPC/LRO timeout elapses with no
+    useful error — a "gRPC sinkhole". Passing the matching regional endpoint
+    via client_options avoids this.
+
+    Returns:
+        ClientOptions with the regional api_endpoint set, or None for the
+        default (global) endpoint.
+    """
+    location = settings.gcs_datastore_region
+    if location == "global":
+        return None
+    else:
+        return ClientOptions(f"{location}-discoveryengine.googleapis.com")
+    return None
 
 
 def create_datastore(dry_run: bool = False) -> str:
@@ -50,7 +86,7 @@ def create_datastore(dry_run: bool = False) -> str:
         google.api_core.exceptions.GoogleAPIError: On API failure.
     """
     parent = (
-        f"projects/{settings.gcp_project_id}/locations/{settings.gcp_location}"
+        f"projects/{settings.gcp_project_id}/locations/{settings.gcs_datastore_region}"
         f"/collections/default_collection"
     )
     datastore_name = f"{parent}/dataStores/{settings.vertex_search_datastore_id}"
@@ -61,7 +97,7 @@ def create_datastore(dry_run: bool = False) -> str:
         )
         return datastore_name
 
-    client = discoveryengine.DataStoreServiceClient()
+    client = discoveryengine.DataStoreServiceClient(client_options=_client_options())
 
     datastore = discoveryengine.DataStore(
         display_name=settings.vertex_search_datastore_id,
@@ -75,8 +111,10 @@ def create_datastore(dry_run: bool = False) -> str:
             parent=parent,
             data_store=datastore,
             data_store_id=settings.vertex_search_datastore_id,
+            timeout=_LRO_RPC_TIMEOUT,
+            retry=_RETRY_TRANSIENT,
         )
-        result = operation.result(timeout=120)
+        result = operation.result(timeout=_LRO_RESULT_TIMEOUT)
         logger.info("DataStore created: %s", result.name)
         return result.name
     except AlreadyExists:
@@ -110,13 +148,18 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
         )
         return
 
-    client = discoveryengine.SchemaServiceClient()
+    client = discoveryengine.SchemaServiceClient(client_options=_client_options())
     schema_name = f"{datastore_name}/schemas/default_schema"
 
-    # Build field configs from metadata_schema.json properties
+    # Build field configs from metadata_schema.json properties. The integer and
+    # array field sets are derived from the schema itself (via SchemaVocabulary)
+    # rather than hard-coded, so this stays in sync with metadata_schema.json —
+    # the old {"keywords", "entities"} set referenced the removed `entities`
+    # field and missed every psychotherapy array field. See DISCREPANCIES.md.
+    vocab = SchemaVocabulary(schema_data)
     field_configs: dict[str, discoveryengine.FieldConfig] = {}
-    int_fields = {"page_start", "page_end", "chunk_index", "year_published"}
-    array_fields = {"keywords", "entities"}
+    int_fields = vocab.integer_fields
+    array_fields = vocab.array_fields
 
     for field_name, field_def in schema_data.get("properties", {}).items():
         if field_name in array_fields:
@@ -140,7 +183,11 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
     )
 
     try:
-        client.update_schema(schema=schema)
+        client.update_schema(
+            schema=schema,
+            timeout=_LRO_RPC_TIMEOUT,
+            retry=_RETRY_TRANSIENT,
+        )
         logger.info("Schema updated: %s", schema_name)
     except Exception:
         try:
@@ -148,6 +195,8 @@ def register_schema(datastore_name: str, dry_run: bool = False) -> None:
                 parent=datastore_name,
                 schema=schema,
                 schema_id="default_schema",
+                timeout=_LRO_RPC_TIMEOUT,
+                retry=_RETRY_TRANSIENT,
             )
             logger.info("Schema created: %s", schema_name)
         except AlreadyExists:
@@ -170,7 +219,7 @@ def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
         Full Search Engine resource name string.
     """
     parent = (
-        f"projects/{settings.gcp_project_id}/locations/{settings.gcp_location}"
+        f"projects/{settings.gcp_project_id}/locations/{settings.gcs_datastore_region}"
         f"/collections/default_collection"
     )
     engine_name = f"{parent}/engines/{settings.vertex_search_engine_id}"
@@ -181,7 +230,7 @@ def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
         )
         return engine_name
 
-    client = discoveryengine.EngineServiceClient()
+    client = discoveryengine.EngineServiceClient(client_options=_client_options())
 
     engine = discoveryengine.Engine(
         display_name=settings.vertex_search_engine_id,
@@ -198,8 +247,10 @@ def create_search_engine(datastore_name: str, dry_run: bool = False) -> str:
             parent=parent,
             engine=engine,
             engine_id=settings.vertex_search_engine_id,
+            timeout=_LRO_RPC_TIMEOUT,
+            retry=_RETRY_TRANSIENT,
         )
-        result = operation.result(timeout=120)
+        result = operation.result(timeout=_LRO_RESULT_TIMEOUT)
         logger.info("Search Engine created: %s", result.name)
         return result.name
     except AlreadyExists:
