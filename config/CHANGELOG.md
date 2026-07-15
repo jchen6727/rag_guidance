@@ -1,4 +1,26 @@
 # Config Changelog
+## 2026-07-13 - Development of rta_v1.json
+
+Splitting  `metadata_schema.json`, split to `rta_v1.json`
+
+`domain` shortened to 7 categories, with each supposed to represent a distinct `professional persona` in that particular therapy and a general `psychotherapy_general` for documents applicable to all domains. In implementation, `cognitive_behavioral_therapy` may be another "bucket" domain containing the modalities `dbt`, `bat`, `act`...
+
+`doc_type` classification for `rta` stripped for now -- generally the documents should all be pertaining to `treatment_manual`, `textbook` or `clinical_guideline`
+
+`therapeutic_modality` (within `domain`) and `clinical_presentation` fixed to recommended modalities.
+
+# NOTE/TODO
+`motivational_interviewing` is also moved to its own event, specifically, should it be retrieved during "preloading" or by `event detection`: `motivational_ambivalence` or `nonadherence`? likely not its own therapeutic modality but detection is sufficient?
+
+`session_event_tags` changed -- `crisis_escalation` and `decompensation` are "fuzzy" terms and likely to be highly dual-tagged, keeping 
+
+# NOTE/TODO
+in each description, likely need something to clarify any ambiguous cases in automated ingestion/ LLM directed schema tagging.
+
+`practice_recommendation_level` switched to `valence`
+
+
+
 
 ## 2026-06-25 — Representation and implementation field additions
 
