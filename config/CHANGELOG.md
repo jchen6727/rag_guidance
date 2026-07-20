@@ -17,10 +17,60 @@ Splitting  `metadata_schema.json`, split to `rta_v1.json`
 # NOTE/TODO
 in each description, likely need something to clarify any ambiguous cases in automated ingestion/ LLM directed schema tagging.
 
-`practice_recommendation_level` switched to `valence`
+# NOTE/TODO
+for `directionality` and `applies_when` how should we design the ingestion and retrieval scripts to know that these two are `PAIRED`, and how should these interact with `session_event_tags`, `clinical_presentation`, `state_vocab`?
 
+`practice_recommendation_level` schema logic changed -- from `schema_recommendations.md`:
+```text
+### 2.3 Recommended design: split into two orthogonal labels
 
+Replace the single `recommendation_level` with:
+```
+```json
+"directionality": {
+  "type": "string",
+  "enum": ["indicated", "contraindicated", "cautionary", "neutral"],
+  "description": "Does this chunk describe doing something, avoiding something, or a caution? Chunk-intrinsic — does NOT encode for-whom."
+},
+"applies_when": {
+  "type": "array",
+  "description": "The states/events/contexts under which this chunk's directionality is active. References the SAME controlled vocab as session_event_tags + clinical_presentation + a small state vocab (e.g. acute_suicidality, intoxication, insufficient_stabilization). Empty = applies whenever the modality is active.",
+  "items": { "type": "string" },
+  "default": []
+}
+```
+```text
+Now:
+- A CPT contraindication for active SI is `directionality: contraindicated`, `applies_when: ["acute_suicidality"]`, `therapeutic_modality: ["CPT"]`.
+- Retrieval logic becomes uniform and clock-aware: **when event tag E fires, retrieve chunks where `E ∈ applies_when` — including contraindications — and rank `directionality: contraindicated` and `chunk_kind: contraindication` to the top.** No special-casing.
+- "Mandatory-always" content is simply `applies_when: []` + a `pre_load: true` flag (or `granularity: protocol_overview` + high `source_authority`) and handled by the session-start injector, not the retriever.
 
+This is strictly more expressive than `contraindicated_for_X` (X becomes a controlled vocabulary shared with your event/presentation enums, so it's queryable and consistent) and avoids a combinatorial explosion of `contraindicated_for_*` boolean columns.
+```
+
+Removed `target_audience` and `training_level_required` for RTA queries. Assume `therapist/supervisor` level competence.
+
+# NOTE/TODO
+seems like risk_dimension_tags become more of a presentation problem--likely to already be retrieved per early chunk
+
+`corpus_scope`, `analysis_function`, `evidence_base`, `time_horizon`, `study_type`, `sample_size`, `intended_use_context` removed as this corpus will be `RTA` only.
+
+`patient_population` and `population_focus` seemingly redundant, removed `population_focus`.
+
+`source_language`, `setting` removed as out of scope for project.
+
+`adaption_status` removed as out of scope for `RTA` for now. Could probably be folded into `patient_population`
+
+# NOTE/TODO
+assign to metadata tags which should have the MOST effective value in determining project outcomes (for instance, distinct tags that don't overlap and route more relevant/applicable corpus texts would be most important). This NEEDS clinician/project management inputs.
+
+# NOTE/TODO
+is `missingness` something an ingestion LLM could reliably handle?
+
+# NOTE/TODO
+should I implement flexible prompting or RAG routing to FOLLOW from the schema json and enumerated values (for instance, where an LLM) - implementation cost
+
+`presentation_coverage` is dropped (culturally specific queries) as well for now.
 
 ## 2026-06-25 — Representation and implementation field additions
 

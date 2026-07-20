@@ -4,7 +4,7 @@
 
 Before adding labels, separate the two problems your architecture actually has, because they impose different constraints and want different index structures.
 
-<NOTE>: should motivational interviewing be a "therapeutic modality" that is preloaded or retrieved by event?
+<NOTE>: should motivational interviewing be a "therapeutic modality" that is preloaded or retrieved by `motivational_ambivalence` event?
 
 - **The session-context clock (slow, warm):** presenting condition, modality, treatment plan. Known *before* the session. This should drive a **pre-filtered, pre-loaded working set** — not a live query. When a CBT-for-depression session starts, the retrievable corpus should already be narrowed to `CBT ∪ MI` × `depression` and warmed in the vector store / cache. Nothing about this needs to be fast because it happens at session setup.
 - **The event clock (fast, cold):** the event detector fires mid-utterance and you need a document in front of the analysis LLM in near-real-time. This is where latency budget is spent, and it should query *into the already-narrowed working set*, not the whole corpus.
@@ -37,10 +37,14 @@ Your current schema tells you *what a chunk is about* (modality, presentation, e
 
 ### 1.3 Clinical-semantic labels worth adding
 
-<NOTE>: is `intervention_phase` something triggered
+<NOTE>: is `intervention_phase` something that is triggered only in PE and CPT? is it a preload to session N?
+
 - **`intervention_phase`** (enum: `early`, `active`, `consolidation`, `relapse_prevention`, `phase_agnostic`). PE and CPT content is strongly phase-dependent; an early-phase psychoeducation chunk is wrong to surface mid-exposure. Cheap to apply, prevents phase-inappropriate retrieval. If your sessions carry a "session N of protocol" marker, this becomes a session-clock filter too.
 - **`prerequisite_state`** (array, e.g., `stabilization_established`, `distress_tolerance_present`). Encodes "don't do trauma processing before X." This is the machine-readable backbone of contraindication logic (see §2).
 - **`population_scope`** (array: `adult`, `adolescent`, `older_adult`, ...). Even if out of current scope, tagging it now costs little and prevents silent misapplication later.
+
+<NOTE>: I removed `bfrb` and `dissociative_disorders` for now as clinicians removed it from focus of their treatment.
+
 - **`bfrb` and `dissociative_disorders` in `clinical_presentation`.** Your description text already calls these out, but they are **not in the enum**. Add them. `dissociative_disorders` in particular has a distinct mid-session presentation (part switching) that your event detector arguably should recognize — see §1.4.
 
 ### 1.4 Additional `session_event_tags` to consider
@@ -93,7 +97,7 @@ The key realization: **your three `recommendation_level` values don't live on th
 
 Replace the single `recommendation_level` with:
 
-```jsonc
+```json
 "directionality": {
   "type": "string",
   "enum": ["indicated", "contraindicated", "cautionary", "neutral"],
