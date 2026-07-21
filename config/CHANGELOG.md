@@ -1,4 +1,42 @@
 # Config Changelog
+## 2026-07-20 - RTA ingestion migrated to rta_v1.json (metadata_schema.json preserved for ASA)
+
+Per directive to prioritize the real-time-analysis (RTA) ingestion deadline, the RTA ingest
+path was migrated from the 37-field unified `metadata_schema.json` to the 23-field
+`rta_v1.json`. `metadata_schema.json` is retained, unchanged, for future after-session-analysis
+(ASA) work and as a historical record; it is no longer loaded by the RTA pipeline.
+
+Code/config changes:
+- `config/settings.py`: `metadata_schema_path` default → `config/rta_v1.json`.
+- `.env`, `.env.example`, `.env.project`, `.env.personal`: `METADATA_SCHEMA_PATH` → `config/rta_v1.json`
+  (previously overrode the default back to `metadata_schema.json`).
+- `models.py`: `ChunkMetadata` rewritten from 37 → 23 fields (adds `directionality`, `applies_when`,
+  `clinical_measure_tags`; drops the ASA/provenance block). `year_published` kept `Optional` so the
+  preserved-ASA loader/coercion tests still pass.
+- `ingestion/metadata_gen.py`: `_extraction_guidance()` rewritten to the `directionality`+`applies_when`
+  model (removed `missingness`/`practice_recommendation_level`/`routing_safety` prompt text);
+  `_load_schema` bare default → `rta_v1.json`.
+
+`rta_v1.json` hardening (was blocking; now done):
+- Added `$defs.state_vocab` (PROVISIONAL — pending clinician §9 Q2).
+- Constrained `applies_when.items` to the closed union enum (events ∪ presentations ∪ state_vocab),
+  materialized flat-inline because `schema_loader`/`setup_vertex_search` do not resolve `$ref`/`oneOf`.
+- `directionality` default `"neutral"`; `domain` default `"psychotherapy_general"`.
+- Root `if/then`: contraindicated/cautionary ⇒ `applies_when` non-empty.
+- Deleted obsolete notes (`routing_safety`, `representation_and_implementation_fields`,
+  `recommended_change_items`); rewrote `notes.vertex_ai_search`; fixed four descriptions;
+  normalized `Columbia` → `C-SSRS`.
+
+Tests: added `tests/test_schema_valid.py` (JSON parse gate) and `tests/test_rta_schema.py`
+(23 fields, defaults, `applies_when` union, pairing conditional, no stale notes, model↔schema
+alignment, coercion round-trip). 57 schema/loader/metadata tests green. Pre-existing failures in
+`test_retrieval.py` (stubbed query path) and `test_chunker.py::test_no_chunk_exceeds_max_tokens`
+are unrelated to this change.
+
+Follow-ups: `#TODO(state-vocab-values)` (tighten provisional states on clinician Q2);
+`#TODO(front-matter)` (`rta_v1.json` has no `front_matter` doc_type, so `skip_doc_types` is now a
+no-op — front matter is unfiltered until front-matter handling is redesigned).
+
 ## 2026-07-13 - Development of rta_v1.json
 
 Splitting  `metadata_schema.json`, split to `rta_v1.json`

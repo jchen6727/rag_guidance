@@ -12,6 +12,19 @@
 <!-- Each agent appends a dated entry at the TOP describing what it changed, what it left open,
      and what the next agent should do first. Never rewrite prior entries. -->
 
+### 2026-07-20 — RTA schema migration to rta_v1.json (COMPLETE)
+- Repointed the RTA ingest path from `metadata_schema.json` (37 fields) to `rta_v1.json` (23 fields):
+  `settings.metadata_schema_path` default + `METADATA_SCHEMA_PATH` in all four `.env*` files;
+  `models.py::ChunkMetadata` rewritten to 23 fields; `metadata_gen._extraction_guidance()` + `_load_schema` default updated.
+- Hardened `rta_v1.json`: `$defs.state_vocab` (provisional), `applies_when` constrained to the union enum,
+  `directionality` default `neutral`, `domain` default `psychotherapy_general`, `if/then` pairing conditional,
+  stale notes purged, four descriptions fixed, `Columbia`→`C-SSRS`.
+- Added `tests/test_schema_valid.py` + `tests/test_rta_schema.py`; 57 schema/loader/metadata tests green.
+- `#NOTE(asa-preserved)[2026-07-20]` `metadata_schema.json` retained for ASA/history; not loaded by RTA.
+- **Next agent should:** run the first-ingest dry-run (`ingestion/agentic_document.md §2`) and address
+  `#TODO(front-matter)[2026-07-20]` — front matter is no longer filtered (rta_v1 doc_type has no `front_matter`).
+- Still blocked on clinician Q2 to *tighten* the provisional `state_vocab` values (mechanism already shipped).
+
 ### 2026-07-20 — orchestrator bootstrap
 - Created the governance layer (`/ORCHESTRATOR.md`, `/MIU_TEMPLATE.md`) and this directory triad.
 - Verified: `rta_v1.json` parses (23 fields); `metadata_schema.json` parses (37 fields); code loads the 37-field schema.
@@ -30,33 +43,25 @@
 4. Any change to a **high-stakes field** (`ORCHESTRATOR §6`) requires an MIU and the validation gate.
 5. After any schema edit that adds/renames an array field, you MUST re-register it in `scripts/setup_vertex_search.py` — unregistered filterable arrays fail silently.
 
-## 2. DECISION REQUIRED before first ingest — which schema?
+## 2. Schema decision — RESOLVED 2026-07-20
 
-The code loads `metadata_schema.json` (37 fields); the design SoT is `rta_v1.json` (23 fields). Pick one, explicitly, and record it in `config/CHANGELOG.md`:
+`#DONE(schema-migration)[2026-07-20]` The RTA ingest path was migrated to `rta_v1.json` (Option B below), per the user directive to prioritize the real-time-analysis ingestion deadline. `config/metadata_schema.json` is preserved for future ASA work and as history. Recorded in `config/CHANGELOG.md` (2026-07-20).
 
-- **Option A — ingest now on `metadata_schema.json` (fastest path to a first ingest).**
-  - Pro: code + DataStore registration already target it; no schema work needed.
-  - Con: tags stale ASA fields (`corpus_scope`, `analysis_function`, `missingness`, …) the RTA design dropped; a later migration to `rta_v1.json` is a **breaking** change ⇒ `purge_datastore.py --confirm` + full re-ingest.
-  - Use if the goal is to validate the *pipeline mechanics* end-to-end, not the final vocabulary.
-- **Option B — migrate to `rta_v1.json` first, then ingest (correct end-state).**
-  - Blocked on: `#TODO(applies-when-vocab)` (needs clinician Q2), `#TODO(directionality-default)`, `#TODO(pairing-conditional)`, `#TODO(stale-notes)`, and repointing `settings.metadata_schema_path` (or the three hardcoded defaults) at `rta_v1.json`.
-  - Pro: first ingest tags against the intended vocabulary; no re-ingest churn.
-  - Con: gated on clinician input (Q2) that is not yet in.
+- **Option A — ingest on `metadata_schema.json`** (throwaway pipeline test) — **NOT taken.**
+- **Option B — migrate to `rta_v1.json`, then ingest (correct end-state)** — **TAKEN.**
+  - `settings.metadata_schema_path` default → `config/rta_v1.json`; `METADATA_SCHEMA_PATH` updated in all four `.env*` files (they previously overrode the default).
+  - `models.py::ChunkMetadata` = 23 RTA fields; serializes to `structData` via `model_dump()`.
+  - `metadata_gen._extraction_guidance()` + `_load_schema` default updated; `SchemaVocabulary` unchanged (it is schema-agnostic).
+  - `#NOTE(asa-preserved)[2026-07-20]` The provisional `state_vocab` values await clinician Q2, but the *mechanism* is shipped — no re-ingest is needed to tighten values later (additive enum change), though re-ingest is needed to populate `applies_when` on chunks tagged before a value change.
 
-**Recommendation:** if a first ingest is needed *now* to prove the pipeline, do **Option A explicitly labeled as a throwaway validation run** (do not treat its index as production), and keep Option B as the real target. Do not silently drift into Option A by just running the script. Whichever you choose, write it down.
+## 3. Task queue (dated; execute top-down)
 
-## 3. Task queue (execute top-down; each links a review point in `dev_document.md`)
-
-- **#TODO(stale-notes)** — cheap, do first, no clinician input needed.
-  - Delete `notes.routing_safety`, `notes.representation_and_implementation_fields`, `notes.recommended_change_items` from `rta_v1.json`.
-  - Rewrite `notes.vertex_ai_search` to list the *actual* array fields in `rta_v1.json`: `therapeutic_modality, clinical_presentation, session_event_tags, applies_when, risk_dimension_tags, patient_population, clinical_measure_tags, technique_tags, clinical_caution` (keywords/missingness informational — but note `missingness` is not even in `rta_v1.json`).
-  - Fix four descriptions: `patient_population` (drop `evidence_base` ref), `session_phase` (reconcile `pre_intake_consultation`: add to enum or drop from prose), `clinical_measure_tags` (drop `analysis_function`), `session_event_tags` (complete the sentence truncated at "Motivational").
-  - Normalize `C-SSRS`/`Columbia` to one value.
-  - Acceptance: `python3 -c "import json;json.load(open('config/rta_v1.json'))"` clean; no description references a field absent from the schema.
-- **#TODO(directionality-default)** — add `"default": "neutral"` to `directionality` OR add it to `required`. One-line change; no clinician input.
-- **#TODO(applies-when-vocab)** — BLOCKED on clinician Q2. When answered: add `$defs.state_vocab`, constrain `applies_when.items` to `oneOf` (event ∪ presentation ∪ state enums), re-register `applies_when` as filterable, add MIU. See `MIU_TEMPLATE.md` MIU-001.
-- **#TODO(pairing-conditional)** — add the draft-07 `if/then` from `summary.md §2.4` after `applies_when` is constrained (order matters — the conditional references it).
-- **#TODO(schema-migration)** — see §2. Do not close silently.
+- `#DONE(stale-notes)[2026-07-20]` Deleted `notes.routing_safety`, `notes.representation_and_implementation_fields`, `notes.recommended_change_items`; rewrote `notes.vertex_ai_search` to the real array-field list; fixed four descriptions (`patient_population`, `session_phase`, `clinical_measure_tags`, `session_event_tags`); normalized `Columbia`→`C-SSRS`. Guarded by `tests/test_rta_schema.py::TestNoStaleReferences`.
+- `#DONE(directionality-default)[2026-07-20]` `directionality` default `"neutral"`.
+- `#DONE(applies-when-vocab)[2026-07-20]` `$defs.state_vocab` added; `applies_when.items` constrained to the closed union enum (events ∪ presentations ∪ states) — materialized as a flat inline enum because `schema_loader`/`setup_vertex_search` do not resolve `$ref`/`oneOf`. Drift guarded by `test_rta_schema.py::TestAppliesWhenVocabulary::test_applies_when_equals_union`. **Values remain provisional** (`#TODO(state-vocab-values)[2026-07-20]` — clinician Q2; MIU: `MIU-001` example).
+- `#DONE(pairing-conditional)[2026-07-20]` draft-07 `if/then` at schema root enforces contraindicated/cautionary ⇒ `applies_when` `minItems: 1`.
+- `#TODO(state-vocab-values)[2026-07-20]` When clinicians answer Q2: edit `$defs.state_vocab` **and** the `applies_when` union enum (keep them equal — the drift test enforces this), bump the schema version note, re-register the filterable `applies_when` array, and re-ingest to populate. MIU required (high-stakes).
+- `#TODO(front-matter)[2026-07-20]` `rta_v1.json` `doc_type` has no `front_matter`, so `chunk_config.yaml`'s `skip_doc_types: [front_matter]` filter is now a no-op. Decide front-matter handling before a production ingest (coordinate with `ingestion/`). Owner: ingestion dev.
 
 ## 4. Invariants to preserve (from `summary.md §0`)
 

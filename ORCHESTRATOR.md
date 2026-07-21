@@ -61,6 +61,7 @@ Three actors, one loop, per functional directory:
 | File | Role | Audience |
 |---|---|---|
 | `ORCHESTRATOR.md` (this file) | Whole-repo protocol, boundaries, cohesion, staleness | All agents (ingest first) |
+| `human_workflow.md` | How human clinicians & developers interact with these docs (what to edit, in what order) | Humans (clinicians + developers) |
 | `MIU_TEMPLATE.md` | Clinical-to-Engineering "Minimum Implementable Unit" spec template | Developers + agents |
 | `CLAUDE.md` | Claude Code operating notes for this repo | Agents (harness) |
 
@@ -99,22 +100,55 @@ When an agent needs to reference an internal detail while answering a clinician'
 
 ---
 
-## 3. Notation standard (every generated doc uses this)
+## 3. Notation standard — dated tags (every orchestration/agentic doc uses this)
 
 Documents are organized in **sections** with inline status tags. Tags are the first token on a line or the first token of a bullet.
 
-| Tag | Meaning | Required trailer |
-|---|---|---|
-| `#TODO` | Not done; still required | Owner hint + what "done" looks like |
-| `#DONE` | Completed | Date (`YYYY-MM-DD`) + one-line resolution |
-| `#NOTE` | Context, decision, or cross-reference that is neither a task nor a completion | Optional `#NOTE(id)` anchor for cross-doc linking |
+**Canonical form — every tag carries an ISO date, and may carry a cross-ref anchor:**
 
-**Extension tags** (permitted, inherited from `schema_recommendations.md` so the two vocabularies stay compatible): `#PARTIAL` (done with a known gap — must link the gap as a `#TODO`), `#DROPPED` (deliberately out of scope — must record rationale so it is not relitigated).
+```
+#TAG                     → #TAG(anchor)?[YYYY-MM-DD]
+```
 
-**Rules:**
-- Every `#TODO` that touches a high-stakes field (§6) must link an MIU or say `MIU: none yet`.
-- Every `#DONE` carries a date and a changelog pointer where a code/schema change was involved.
-- Cross-document references use `#NOTE(id)` anchors, resolvable across the whole repo.
+| Written as | Meaning |
+|---|---|
+| `#TODO[2026-07-20]` | Not done; still required, *as re-affirmed on* 2026-07-20 |
+| `#DONE[2026-07-20]` | Completed on 2026-07-20 |
+| `#NOTE(schema-wired)[2026-07-20]` | Context/decision, anchored `schema-wired`, affirmed 2026-07-20 |
+| `#STALE[2026-07-20]` | Found contradicted by the authoritative set on 2026-07-20 |
+| `#PARTIAL[2026-07-20]` / `#DROPPED[2026-07-20]` | Done-with-gap (must link a `#TODO`) / out-of-scope (must record rationale) |
+
+The `[YYYY-MM-DD]` is **mandatory**; the `(anchor)` is optional and used for cross-doc links (`#NOTE(applies-when-vocab)` is resolvable repo-wide).
+
+### 3.1 Why the date — freshness and authoritative scope
+
+The date is **when the status was last affirmed**, and it is what makes freshness mechanical instead of a judgment call:
+
+- A doc's *authoritative-as-of* date is the **max tag date** in it (or its `Last reconciled` header — a reconciler sets both to the same day).
+- A `#TODO` or `#NOTE` whose date is **older than the newest entry in the directory's `CHANGELOG.md`** is **suspect** — re-affirm it (bump the date) or resolve it before relying on it.
+- When you touch or re-confirm a tag, **update its date to today**. Completing a `#TODO` converts it to `#DONE[today]`, keeping the anchor.
+
+### 3.2 Mechanical audit (grep the whole repo)
+
+```bash
+# List every tag with its date (oldest first) → the freshness worklist
+grep -rEoh '#(TODO|DONE|NOTE|STALE|PARTIAL|DROPPED)(\([a-z0-9-]+\))?\[[0-9]{4}-[0-9]{2}-[0-9]{2}\]' \
+  ORCHESTRATOR.md MIU_TEMPLATE.md human_workflow.md */agentic_document.md */dev_document.md \
+  | sort -t'[' -k2
+
+# Undated tags (a defect — every orchestration/agentic tag must carry a date)
+grep -rEn '#(TODO|DONE|NOTE|STALE|PARTIAL|DROPPED)([^([]|\(|$)' */agentic_document.md ORCHESTRATOR.md \
+  | grep -vE '\[[0-9]{4}-[0-9]{2}-[0-9]{2}\]'
+```
+
+### 3.3 Scope of the dated convention
+
+- **Required** in orchestration + agentic + internal dev docs: `ORCHESTRATOR.md`, `MIU_TEMPLATE.md`, `human_workflow.md`, every `agentic_document.md`, every `dev_document.md`.
+- **Not required** in `clinical_document.md` — clinicians use plain `#TODO`/`#DONE` (the dated machinery is internal; keep the external surface simple).
+
+**Other rules:**
+- Every `#TODO` touching a high-stakes field (§6) links an MIU or says `MIU: none yet`.
+- Every `#DONE` that involved a code/schema change carries a `CHANGELOG.md` pointer.
 
 ---
 
@@ -197,17 +231,19 @@ These derive from `summary.md` §0 invariants and §3.3. Any agent implementing 
 
 - **Ingest path is implemented and runnable** (`ingestion/` + `scripts/batch_ingest.py`). Query path (`retrieval/`, `generation/`, `rta_prompt/`) is stubbed.
 - **Corpus:** 5 PDFs staged in `corpus/` (CBT/PE/social-phobia/cultural-adaptation). **No `.ingestion_manifest.json` yet → nothing has been ingested.** First ingest is genuinely first.
-- **Schema migration gap (blocking clean first ingest):**
-  - `#NOTE(schema-split)` `config/rta_v1.json` (23 fields, RTA-only, `directionality`+`applies_when` design) is the **design SoT**.
-  - `#NOTE(schema-wired)` The **code loads `config/metadata_schema.json`** (37 fields, unified RTA+ASA) via `settings.metadata_schema_path` → `schema_loader.py`, `metadata_gen.py`, `setup_vertex_search.py`.
-  - `#TODO(schema-migration)` Decide the first-ingest schema (see `config/agentic_document.md`). Until decided, an ingest today tags against the **37-field** schema, including fields (`corpus_scope`, `analysis_function`, `missingness`, …) that `rta_v1.json` intentionally dropped.
-- **`rta_v1.json` open blocking items** (from `summary.md` §2, re-verified):
-  - `#DONE` 2026-07-19 file parses (trailing-comma bug already fixed; `summary.md §2.1` text is now stale).
-  - `#TODO(applies-when-vocab)` `applies_when` is unconstrained `{"type":"string"}` — no `state_vocab`. Highest-severity gap.
-  - `#TODO(directionality-default)` `directionality` has no default and is not `required` — may be silently absent.
-  - `#TODO(pairing-conditional)` No `if/then` enforcing directionality↔applies_when pairing.
-  - `#TODO(stale-notes)` `notes.routing_safety`, `notes.representation_and_implementation_fields`, `notes.recommended_change_items` describe removed fields and are still read into the ingestion prompt via `metadata_gen._extraction_guidance()`.
-- **Open clinician questions:** `schema_recommendations.md` §9, Q1–Q10. Priority Q2 (state vocab) → Q1 (modality matrix) → Q7 (session-context availability).
+- **`#DONE(schema-migration)[2026-07-20]` RTA migration to `rta_v1.json` is complete** (CHANGELOG: `config/CHANGELOG.md` 2026-07-20). The RTA ingest path now loads the 23-field `config/rta_v1.json`:
+  - `settings.metadata_schema_path` default → `config/rta_v1.json`; `METADATA_SCHEMA_PATH` updated in all four `.env*` files (they previously overrode the default back to the 37-field schema).
+  - `models.py::ChunkMetadata` rewritten to the 23 RTA fields (incl. `directionality`/`applies_when`/`clinical_measure_tags`); serializes cleanly to `structData`.
+  - `metadata_gen._extraction_guidance()` rewritten to the `directionality`+`applies_when` model (removed `missingness`/`practice_recommendation_level`/`routing_safety` prompt text).
+  - `#NOTE(asa-preserved)[2026-07-20]` `config/metadata_schema.json` (37 fields) is **retained for future ASA work and as history** — not loaded by RTA. `ChunkMetadata` keeps `year_published` `Optional` so the ASA-schema loader/coercion tests still pass.
+- **`rta_v1.json` hardening (was blocking; now resolved):**
+  - `#DONE(applies-when-vocab)[2026-07-20]` `applies_when` constrained to the closed union enum (events ∪ presentations ∪ `$defs.state_vocab`). State list is **provisional pending clinician Q2** — mechanism shipped, values versioned on answer.
+  - `#DONE(directionality-default)[2026-07-20]` `directionality` default `"neutral"`.
+  - `#DONE(pairing-conditional)[2026-07-20]` draft-07 `if/then` enforces contraindicated/cautionary ⇒ `applies_when` non-empty.
+  - `#DONE(stale-notes)[2026-07-20]` obsolete notes deleted, four descriptions fixed, `notes.vertex_ai_search` rewritten, `Columbia`→`C-SSRS` normalized.
+  - Guarded by `tests/test_rta_schema.py` + `tests/test_schema_valid.py` (57 tests green).
+- **`#TODO(front-matter)[2026-07-20]` New live gap from the migration:** `rta_v1.json` `doc_type` has no `front_matter` value, so `chunk_config.yaml`'s `skip_doc_types: [front_matter]` filter now matches nothing — front matter is **not dropped** until front-matter handling is redesigned. Spot-check first-ingest output. See `ingestion/dev_document.md`.
+- **Open clinician questions:** `schema_recommendations.md` §9, Q1–Q10. Priority Q2 (state vocab — unblocks tightening `applies_when` values) → Q1 (modality matrix) → Q7 (session-context availability).
 
 ---
 
@@ -250,6 +286,7 @@ Applies to **every** document in the repo, and is restated (in brief) in each ge
 | Path | Type | In scope | Status |
 |---|---|---|---|
 | `ORCHESTRATOR.md` | Governance | — | Active |
+| `human_workflow.md` | Governance (human-facing) | — | Active |
 | `MIU_TEMPLATE.md` | Governance | — | Active |
 | `config/clinical_document.md` | External | Yes | Active |
 | `config/dev_document.md` | Internal | Yes | Active |

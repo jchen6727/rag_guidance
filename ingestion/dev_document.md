@@ -37,33 +37,32 @@ corpus/*.pdf
 
 ## 2. Vocabulary dependency (the important cross-cut)
 
-`metadata_gen.py` builds the extraction prompt from the schema it loads: the `properties` JSON, an enum legend (`_enum_legend` via `SchemaVocabulary`), and `_extraction_guidance()` which pulls `notes.domain_vs_modality`, `notes.routing_safety`, plus a `missingness` instruction.
+`metadata_gen.py` builds the extraction prompt from the schema it loads: the `properties` JSON, an enum legend (`_enum_legend` via `SchemaVocabulary`), and `_extraction_guidance()`.
 
-- **#NOTE(schema-wired)** It loads `config/metadata_schema.json` (37 fields) — see `config/dev_document.md §2`. So ingestion currently elicits ASA + provenance fields and reads the **stale `notes.routing_safety`** and a `missingness` inference instruction into the prompt.
-- **#TODO** When the config-layer `#TODO(stale-notes)` and `#TODO(schema-migration)` land, this prompt text changes automatically (it is schema-derived) — no ingestion code change needed, but re-verify `_extraction_guidance()` doesn't reference notes that were deleted (it calls `notes.get(...)` with defaults, so deletion degrades gracefully to empty strings — confirm).
+- `#DONE(schema-wired)[2026-07-20]` It now loads `config/rta_v1.json` (23 fields) via `settings.metadata_schema_path`. `_extraction_guidance()` was rewritten to the `directionality`+`applies_when` model (removed the `missingness`/`practice_recommendation_level`/`routing_safety` prompt text). Enum legend now includes the constrained `applies_when` vocabulary, so Gemini is told the allowed state/event/presentation tokens. Cross-ref `config/dev_document.md §2`.
+- `#NOTE[2026-07-20]` The prompt is schema-derived, so future enum/description edits in `rta_v1.json` flow through automatically — but re-verify `_extraction_guidance()` after any `notes` key rename (it uses `notes.get(...)` with defaults, so a missing key degrades to empty, not an error).
 
 ## 3. Known gaps / defects
 
-- **#PARTIAL(front-matter)** `chunk_config.yaml` defines `skip_doc_types` and `front_matter_indicators`. Only `skip_doc_types` is consumed — `batch_ingest.py:114` filters chunks whose `metadata.doc_type ∈ skip_doc_types` (e.g. `front_matter`). But **`front_matter_indicators` is never used by `ContextAwareChunker`** — there is no structural front-matter pre-tagging. Front matter is only dropped if Gemini happens to tag it `front_matter`, which is unreliable. This is the "junk passages" risk the clinician doc flags.
-  - **#NOTE** `rta_v1.json` `doc_type` enum has **no `front_matter` value** (only `treatment_manual/textbook/clinical_guideline/other`). So under a future migration to `rta_v1.json`, the `skip_doc_types: [front_matter]` filter would match nothing and drop no chunks. Front-matter handling must be redesigned before/with that migration.
-- **#NOTE** `ingestion/watcher.py` is a superseded stub replaced by `scanner.py`; treat as dead (per `CLAUDE.md`).
-- **#NOTE** No out-of-vocab validation gate at write time (arrays). `additionalProperties:false` blocks unknown keys, not out-of-vocab array members. `summary.md §3.3` specifies the post-extraction gate; not implemented.
-- **#TODO** `generate_batch` is sequential with a fixed delay; `metadata_gen.py` notes >1000 chunks should move to Vertex AI Batch Prediction. Fine for the 5-PDF first ingest.
+- `#TODO(front-matter)[2026-07-20]` **Live gap since the migration.** `rta_v1.json` `doc_type` has **no `front_matter` value** (only `treatment_manual/textbook/clinical_guideline/other`), so `chunk_config.yaml`'s `skip_doc_types: [front_matter]` filter at `batch_ingest.py:114` now matches nothing — **front matter is no longer dropped at all.** (Separately, `front_matter_indicators` was never wired into `ContextAwareChunker`, so there is no structural pre-tagging either.) Mitigation options: (a) add a structural front-matter pass keyed on `front_matter_indicators`; (b) re-introduce a `front_matter` doc_type/skip mechanism compatible with `rta_v1.json`; or (c) accept leakage for the first run and spot-check. Decide before a production ingest.
+- `#NOTE[2026-07-20]` `ingestion/watcher.py` is a superseded stub replaced by `scanner.py`; treat as dead (per `CLAUDE.md`).
+- `#NOTE(write-validation)[2026-07-20]` No out-of-vocab validation gate at write time (arrays). `additionalProperties:false` blocks unknown keys, not out-of-vocab array members. `summary.md §3.3` specifies the post-extraction gate; not implemented.
+- `#TODO[2026-07-20]` `generate_batch` is sequential with a fixed delay; `metadata_gen.py` notes >1000 chunks should move to Vertex AI Batch Prediction. Fine for the 5-PDF first ingest.
 
 ## 4. First-ingest readiness (for the test run)
 
 Preconditions and the recommended sequence live in `ingestion/agentic_document.md §2` and `scripts/agentic_document.md`. Summary of the state:
 
-- **#DONE** Pipeline code implemented and importable.
-- **#DONE** 5 real PDFs staged in `corpus/`.
-- **#TODO** GCP env not verified from here — requires `.env` populated and `scripts/setup_vertex_search.py` run (DataStore + schema registration) **before** first import.
-- **#TODO(schema-migration)** Decide the ingest schema first (`config/agentic_document.md §2`). A first ingest inherits whichever schema the code loads.
+- `#DONE[2026-07-20]` Pipeline code implemented and importable.
+- `#DONE[2026-07-20]` 5 real PDFs staged in `corpus/`.
+- `#DONE(schema-migration)[2026-07-20]` Active schema resolved = `config/rta_v1.json` (`config/agentic_document.md §2`). The first ingest will tag against it.
+- `#TODO[2026-07-20]` GCP env not verified from here — requires `.env` populated and `scripts/setup_vertex_search.py` run (DataStore + schema registration) **before** first import.
 
 ## 5. Review points (kept current)
 
-- **#PARTIAL(front-matter)** Owner: ingestion dev. Done = `front_matter_indicators` wired into the structural pass OR a documented decision to rely on doc_type + a front-matter redesign compatible with the target schema.
-- **#TODO(write-validation)** Owner: ingestion dev. Done = post-extraction enum/pairing validation with a QA-queue route (`summary.md §3.3`).
-- **#TODO(schema-migration)** tracked in `config/`; ingestion is a downstream consumer.
+- `#TODO(front-matter)[2026-07-20]` Owner: ingestion dev. Live gap: `skip_doc_types` is a no-op under `rta_v1.json` (no `front_matter` doc_type) and `front_matter_indicators` was never wired. Done = a front-matter pass wired into the structural split OR a documented accept-and-spot-check decision.
+- `#TODO(write-validation)[2026-07-20]` Owner: ingestion dev. Done = post-extraction enum/pairing validation with a QA-queue route (`summary.md §3.3`). High-stakes ⇒ MIU required.
+- `#DONE(schema-migration)[2026-07-20]` Ingestion consumes `rta_v1.json`; verified end-to-end.
 
 ---
 

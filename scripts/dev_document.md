@@ -42,8 +42,8 @@ preflight_check.sh  →  setup_vertex_search.py (register schema)  →  batch_in
 
 ## 3. Schema coupling (the cross-cut to watch)
 
-- **#NOTE(schema-wired)** `setup_vertex_search.py` registers whatever `settings.metadata_schema_path` points at — today `config/metadata_schema.json` (37 fields). So the **DataStore schema and the ingestion tags are consistent with each other but with the 37-field schema, not `rta_v1.json`.**
-- **#TODO(schema-migration)** If/when the code repoints to `rta_v1.json`, `setup_vertex_search.py` must re-register the new field set and the array-field filterable list changes (`rta_v1.json` array fields: `therapeutic_modality, clinical_presentation, session_event_tags, applies_when, risk_dimension_tags, patient_population, clinical_measure_tags, technique_tags, clinical_caution`). This is a breaking, purge-and-re-ingest change.
+- `#DONE(schema-wired)[2026-07-20]` `setup_vertex_search.py` registers whatever `settings.metadata_schema_path` points at — now `config/rta_v1.json` (23 fields). Verified: `_create_discoveryengine_schema(rta_v1)` emits 23 fields with the 10 array fields (`therapeutic_modality, clinical_presentation, session_event_tags, applies_when, risk_dimension_tags, patient_population, clinical_measure_tags, technique_tags, clinical_caution, keywords`) marked `indexable`, and `directionality` (scalar enum) indexable+searchable. DataStore schema and ingestion tags are now mutually consistent on `rta_v1.json`.
+- `#NOTE[2026-07-20]` `_INFORMATIONAL_ONLY_FIELDS = {"missingness"}` and some docstrings still name `metadata_schema.json` — harmless (no `missingness` field in `rta_v1.json`; the function reads `settings.metadata_schema_path` at runtime), but a low-priority cleanup `#TODO(setup-docstrings)[2026-07-20]`.
 
 ## 4. Safety notes
 
@@ -53,9 +53,9 @@ preflight_check.sh  →  setup_vertex_search.py (register schema)  →  batch_in
 
 ## 5. Review points (kept current)
 
-- **#TODO** First provisioning + ingest not yet run from this environment (`.env` not verified here).
-- **#TODO(schema-migration)** `setup_vertex_search.py` re-registration is a downstream step of the config-layer migration decision.
-- **#NOTE** `verify_datastore.sh` hardcoded IDs should be parameterized or the script marked scratch-only.
+- `#TODO[2026-07-20]` First provisioning + ingest not yet run from this environment (`.env` not verified here).
+- `#DONE(schema-migration)[2026-07-20]` `setup_vertex_search.py` now registers `rta_v1.json` (reads `settings.metadata_schema_path`). Any DataStore already created against the old 37-field schema must be purged + re-provisioned.
+- `#NOTE[2026-07-20]` `verify_datastore.sh` hardcoded IDs should be parameterized or the script marked scratch-only.
 
 ---
 

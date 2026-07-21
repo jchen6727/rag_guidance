@@ -199,19 +199,28 @@ class MetadataGenerator:
         return "\n".join(lines)
 
     def _extraction_guidance(self) -> str:
-        """Return psychotherapy-specific extraction notes drawn from schema `notes`."""
+        """Return psychotherapy-specific extraction notes drawn from schema `notes`.
+
+        Aligned to the active RTA schema (``rta_v1.json``): the directionality +
+        applies_when relational contraindication model, not the removed
+        ``practice_recommendation_level`` / ``missingness`` fields.
+        """
         notes = self._schema.get("notes", {})
         guidance = [
             "Extraction guidance:",
             "- domain is document-level (the source's overall orientation); "
             "therapeutic_modality is chunk-level (what THIS passage addresses) — "
             "they may differ. " + notes.get("domain_vs_modality", ""),
-            "- Populate missingness by inferring what the source does NOT report "
-            "(demographics, fidelity monitoring, adverse events), not only what it states.",
-            "- clinical_caution and practice_recommendation_level polarity "
-            "(use_with_caution/contraindicated) are patient-safety fields: extract "
-            "them explicitly; never omit a stated contraindication.",
-            "- " + notes.get("routing_safety", ""),
+            "- directionality and applies_when are ONE decision: does the passage say to "
+            "DO something (indicated), AVOID something (contraindicated), or proceed with "
+            "CAUTION (cautionary), and under exactly which events/presentations/patient-states "
+            "does that apply? If it applies whenever the modality is active, return applies_when "
+            "as an empty list. A contraindicated or cautionary passage MUST list at least one "
+            "applies_when value. " + notes.get("directionality_applies_when", ""),
+            "- clinical_caution and any contraindicated/cautionary directionality are "
+            "patient-safety fields: extract them explicitly and never omit a stated contraindication.",
+            "- session_event_tags here tag what the passage is ABOUT (a retrieval target), "
+            "NOT a live event; 'none' means the passage addresses no specific in-session event.",
         ]
         return "\n".join(line for line in guidance if line.strip())
 
@@ -335,8 +344,9 @@ class MetadataGenerator:
         """Load and return the metadata JSON schema.
 
         Args:
-            schema_path: Explicit path. If None, resolves to
-                         <project_root>/config/metadata_schema.json.
+            schema_path: Explicit path (in production, ``settings.metadata_schema_path``
+                         → ``config/rta_v1.json``). If None, resolves to the active RTA
+                         schema at <project_root>/config/rta_v1.json.
 
         Returns:
             Parsed schema dict.
@@ -345,7 +355,7 @@ class MetadataGenerator:
             FileNotFoundError: If the schema file does not exist.
         """
         if schema_path is None:
-            schema_path = Path(__file__).parent.parent / "config" / "metadata_schema.json"
+            schema_path = Path(__file__).parent.parent / "config" / "rta_v1.json"
         if not schema_path.exists():
             raise FileNotFoundError(f"Metadata schema not found: {schema_path}")
         with open(schema_path) as f:

@@ -141,9 +141,16 @@ class Settings:
 
     @property
     def metadata_schema_path(self) -> Path:
-        """Path to metadata_schema.json."""
+        """Path to the ACTIVE ingestion schema.
+
+        Defaults to ``config/rta_v1.json`` — the real-time-analysis (RTA) schema
+        (``ChunkMetadata_v1``, 23 fields) that ``metadata_gen`` and
+        ``setup_vertex_search`` load. The 37-field unified schema in
+        ``config/metadata_schema.json`` is retained for future ASA work and as a
+        historical record; point ``METADATA_SCHEMA_PATH`` at it only for ASA.
+        """
         return Path(
-            os.environ.get("METADATA_SCHEMA_PATH", "config/metadata_schema.json")
+            os.environ.get("METADATA_SCHEMA_PATH", "config/rta_v1.json")
         )
 
     # -----------------------------------------------------------------------

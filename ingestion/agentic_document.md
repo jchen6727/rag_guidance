@@ -8,11 +8,15 @@
 
 ## Handoff log (newest first)
 
+### 2026-07-20 — RTA schema migration landed (ingestion is a consumer)
+- The active schema is now `config/rta_v1.json` (23 fields). `metadata_gen` loads it via `settings.metadata_schema_path`; `_extraction_guidance()` rewritten to `directionality`+`applies_when`. No structural pipeline change (extractor/chunker/uploader/indexer unchanged).
+- `#TODO(front-matter)[2026-07-20]` **elevated to live:** `skip_doc_types: [front_matter]` is now a no-op (rta_v1 has no `front_matter` doc_type) — front matter will index unless mitigated. See `dev_document.md §3`.
+- **Next agent should:** run the first-ingest dry-run (§2) and inspect front-matter leakage + metadata-failure rate before any real ingest.
+
 ### 2026-07-20 — orchestrator bootstrap
 - Created this triad. No pipeline code changed.
 - Verified pipeline is importable and 5 PDFs are staged; no manifest exists (first ingest is first).
-- **Next agent should:** confirm the schema decision (`config/agentic_document.md §2`), then run the first-ingest runbook (§2 below) in `--dry-run` first.
-- Left open: `#PARTIAL(front-matter)`, `#TODO(write-validation)` in `dev_document.md`.
+- Left open (now updated above): schema decision (resolved), front-matter, `#TODO(write-validation)`.
 
 `<!-- ▲ latest handoff above ▲ -->`
 
@@ -29,7 +33,7 @@
 ## 2. First-ingest runbook (execute in order)
 
 ```bash
-# 0. Confirm the schema decision is recorded (config/agentic_document.md §2 + config/CHANGELOG.md).
+# 0. Schema decision is RESOLVED: active schema = config/rta_v1.json (config/agentic_document.md §2).
 
 # 1. Env + provisioning (once). Requires populated .env.
 cp .env.example .env          # then populate GCP_PROJECT_ID, GCS_BUCKET_NAME, VERTEX_SEARCH_* , GCP_LOCATION
@@ -47,8 +51,8 @@ PYTHONPATH=. python scripts/batch_ingest.py
 # 5. Verify import counts (success/failed) in the summary table; check .ingestion_manifest.json was written.
 ```
 
-- **Order dependency:** `setup_vertex_search.py` (register schema) MUST precede `batch_ingest.py`. Chunks indexed before schema registration silently drop unregistered metadata fields (`CLAUDE.md`, `summary.md §4.4`).
-- **Throwaway-run caveat:** if you ingested under Option A (`metadata_schema.json`) as a mechanics test, the resulting index is disposable — migrating to `rta_v1.json` later is breaking and requires `purge_datastore.py --confirm` + full re-ingest.
+- **Order dependency:** `setup_vertex_search.py` (register schema) MUST precede `batch_ingest.py`. Chunks indexed before schema registration silently drop unregistered metadata fields (`CLAUDE.md`, `summary.md §4.4`). It registers the active schema (`rta_v1.json`), so `applies_when`/`directionality`/`clinical_measure_tags` are now among the registered filterable fields.
+- `#NOTE(state-vocab-values)[2026-07-20]` The `applies_when` state values are provisional (clinician Q2). Adding values later is additive (no purge), but chunks tagged before the change won't carry new values until re-ingested.
 
 ## 3. What to watch during the first ingest
 
@@ -59,9 +63,9 @@ PYTHONPATH=. python scripts/batch_ingest.py
 
 ## 4. Task queue
 
-- **#TODO(write-validation)** Implement the `summary.md §3.3` post-extraction gate: reject out-of-vocab array values, enforce `directionality`↔`applies_when` pairing, route failures to a QA queue (not the index). High-stakes ⇒ MIU required.
-- **#PARTIAL(front-matter)** Wire `front_matter_indicators` into `ContextAwareChunker`'s structural pass, or redesign front-matter handling to survive the `rta_v1.json` doc_type set (which has no `front_matter`). Coordinate with `config/`.
-- **#TODO** If chunk volume grows >1000, switch `generate_batch` to Vertex AI Batch Prediction.
+- `#TODO(write-validation)[2026-07-20]` Implement the `summary.md §3.3` post-extraction gate: reject out-of-vocab array values, enforce `directionality`↔`applies_when` pairing, route failures to a QA queue (not the index). High-stakes ⇒ MIU required.
+- `#TODO(front-matter)[2026-07-20]` Wire `front_matter_indicators` into `ContextAwareChunker`'s structural pass, or redesign front-matter handling for the `rta_v1.json` doc_type set (which has no `front_matter`). Coordinate with `config/`.
+- `#TODO[2026-07-20]` If chunk volume grows >1000, switch `generate_batch` to Vertex AI Batch Prediction.
 
 ## 5. Update-on-exit checklist
 

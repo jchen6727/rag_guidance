@@ -8,6 +8,10 @@
 
 ## Handoff log (newest first)
 
+### 2026-07-20 — RTA migration: scripts register rta_v1.json now
+- No script code changed. `setup_vertex_search.py` reads `settings.metadata_schema_path`, which now resolves to `config/rta_v1.json` — so provisioning registers the 23-field RTA schema (incl. filterable `applies_when`/`directionality`/`clinical_measure_tags`). Verified via `_create_discoveryengine_schema`.
+- **Next agent:** if a DataStore was already created against the old 37-field schema, it must be purged (`purge_datastore.py --confirm`) and re-provisioned — the region/schema are set at creation. Fresh environments are fine.
+
 ### 2026-07-20 — orchestrator bootstrap
 - Created this triad. No scripts changed.
 - Verified script interfaces: `setup_vertex_search.py --dry-run`; `batch_ingest.py --dry-run|--force|--file`; `purge_datastore.py --confirm|--dry-run|--doc-id|--reingest`.
@@ -63,9 +67,9 @@ PYTHONPATH=. python scripts/purge_datastore.py --confirm
 
 ## 4. Task queue
 
-- **#TODO** Perform the first provisioning + dry-run once `.env` and the schema decision are in place.
-- **#NOTE** `verify_datastore.sh` has hardcoded `PROJECT_ID="jchen-6727"` / placeholder `DATA_STORE_ID` — parameterize or treat as scratch; do not trust its defaults.
-- **#TODO(schema-migration)** When config repoints to `rta_v1.json`, re-run `setup_vertex_search.py` to re-register; this is breaking (purge + re-ingest).
+- `#TODO[2026-07-20]` Perform the first provisioning + dry-run once `.env` is populated (schema decision is resolved: `rta_v1.json`).
+- `#NOTE[2026-07-20]` `verify_datastore.sh` has hardcoded `PROJECT_ID="jchen-6727"` / placeholder `DATA_STORE_ID` — parameterize or treat as scratch; do not trust its defaults.
+- `#DONE(schema-migration)[2026-07-20]` Provisioning registers `rta_v1.json`. If a DataStore already exists against the old schema, purge + re-provision (schema/region are fixed at creation).
 
 ## 5. Update-on-exit checklist
 
