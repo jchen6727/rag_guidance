@@ -8,6 +8,13 @@
 
 ## Handoff log (newest first)
 
+### 2026-07-21 — Test-ingestion + evaluation tooling added
+- New scripts: `scripts/inspect_chunks.py` (offline extract→chunk→optional-Gemini-tag; writes readable `.review.md` + `.chunks.jsonl` to `ingestion_review/`; `--no-metadata`, `--limit`, `--verbose`), `scripts/review_datastore.py` (lists indexed docs + tags from Discovery Engine), and `scripts/_gcp_logging.py` (shared `setup_logging` + `describe_google_error`).
+- `scripts/batch_ingest.py` gained `--verbose` and wraps setup + per-file loop so Google API failures print an actionable hint instead of a raw traceback; a bad file no longer kills the batch.
+- Verified `inspect_chunks.py --no-metadata` on `corpus/APA_Boswell_Constantino_Deliberate_Practice_CBT.pdf`: **216 pages → 921 chunks**, `doc_id ef0c4d1d…`. Confirms the `#TODO(front-matter)[2026-07-20]` leak (chunk 00000 = "HALF TITLE PAGE").
+- Operator guide: `/test_ingestion.md` (non-technical, Levels 1–3). Review output dir `ingestion_review/` is git-ignored.
+- **Next agent:** the Gemini-tagging path (`inspect_chunks.py` without `--no-metadata`) and the cloud steps are unrun here (no creds); exercise them once `.env` is populated.
+
 ### 2026-07-20 — RTA schema migration landed (ingestion is a consumer)
 - The active schema is now `config/rta_v1.json` (23 fields). `metadata_gen` loads it via `settings.metadata_schema_path`; `_extraction_guidance()` rewritten to `directionality`+`applies_when`. No structural pipeline change (extractor/chunker/uploader/indexer unchanged).
 - `#TODO(front-matter)[2026-07-20]` **elevated to live:** `skip_doc_types: [front_matter]` is now a no-op (rta_v1 has no `front_matter` doc_type) — front matter will index unless mitigated. See `dev_document.md §3`.
@@ -51,6 +58,7 @@ PYTHONPATH=. python scripts/batch_ingest.py
 # 5. Verify import counts (success/failed) in the summary table; check .ingestion_manifest.json was written.
 ```
 
+- **Reviewing tags & chunks:** use `scripts/inspect_chunks.py <pdf>` for a local extract→chunk→tag preview (writes `ingestion_review/*.review.md`; `--no-metadata` for a no-API/no-cost chunk-only pass; `--limit N` to cap Gemini calls). After a real ingest, use `scripts/review_datastore.py [--doc-id <prefix>]` or the Cloud console (AI Applications → Data Stores → Documents). Operator walkthrough: `/test_ingestion.md`.
 - **Order dependency:** `setup_vertex_search.py` (register schema) MUST precede `batch_ingest.py`. Chunks indexed before schema registration silently drop unregistered metadata fields (`CLAUDE.md`, `summary.md §4.4`). It registers the active schema (`rta_v1.json`), so `applies_when`/`directionality`/`clinical_measure_tags` are now among the registered filterable fields.
 - `#NOTE(state-vocab-values)[2026-07-20]` The `applies_when` state values are provisional (clinician Q2). Adding values later is additive (no purge), but chunks tagged before the change won't carry new values until re-ingested.
 

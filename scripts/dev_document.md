@@ -27,6 +27,9 @@
 | `purge_datastore.py` | Deletes documents from the DataStore | **YES** | `--confirm` (required), `--dry-run`, `--doc-id`, `--reingest` |
 | `verify_context.py` | Validates project context + IAM permissions for the active identity | No | — |
 | `verify_datastore.sh` | Fetches the registered DataStore schema (has a hardcoded `PROJECT_ID`/`DATA_STORE_ID` to edit) | No | edit vars in file |
+| `inspect_chunks.py` | **Local** extract→chunk→(optional Gemini tag) preview; writes `ingestion_review/*.review.md` + `.chunks.jsonl`. No cloud. | No | `--no-metadata`, `--limit`, `--out`, `--verbose` |
+| `review_datastore.py` | Lists indexed docs + their tags from the DataStore (CLI counterpart to the Cloud console) | No | `--doc-id`, `--limit`, `--count-only`, `--out`, `--verbose` |
+| `_gcp_logging.py` | Shared helper: `setup_logging(verbose)` + `describe_google_error()` (actionable Google API error hints) | — | imported by the scripts |
 
 ## 2. Order dependency (must hold)
 

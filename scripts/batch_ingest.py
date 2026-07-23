@@ -36,6 +36,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Imported first so its warnings filter is registered before the google.generativeai
+# import (below, via the ingestion package) prints its end-of-life FutureWarning.
+from scripts._gcp_logging import log_api_error, setup_logging
+
 from config.settings import settings
 from ingestion.extractor import PDFExtractor
 from ingestion.chunker import ContextAwareChunker
@@ -44,7 +48,6 @@ from ingestion.uploader import GCSUploader
 from ingestion.indexer import VertexSearchIndexer
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
 def ingest_file(
@@ -259,29 +262,48 @@ def main() -> None:
         default=None,
         help="Ingest a single specific PDF file instead of scanning corpus/.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose logging, including Google/gRPC internals — use to debug API failures.",
+    )
     args = parser.parse_args()
 
-    settings.validate_all()
+    setup_logging(args.verbose)
 
-    extractor = PDFExtractor(
-        use_document_ai=settings.use_document_ai,
-        document_ai_processor_id=settings.document_ai_processor_id or "",
-        project_id=settings.gcp_project_id,
-    )
-    chunker = ContextAwareChunker()
-    metadata_gen = MetadataGenerator(
-        model_name=settings.gemini_model_metadata,
-        schema_path=settings.metadata_schema_path,
-    )
-    uploader = GCSUploader(
-        bucket_name=settings.gcs_bucket_name,
-        project_id=settings.gcp_project_id,
-    )
-    indexer = VertexSearchIndexer(
-        project_id=settings.gcp_project_id,
-        location=settings.gcp_location,
-        datastore_id=settings.vertex_search_datastore_id,
-    )
+    # Fail fast with an actionable message on missing config or bad credentials
+    # rather than a raw traceback deep in the first API call.
+    try:
+        settings.validate_all()
+    except Exception as exc:  # missing/empty env vars
+        logger.error("Configuration problem — check your .env:\n%s", exc)
+        sys.exit(2)
+
+    logger.info("Active metadata schema: %s", settings.metadata_schema_path)
+
+    try:
+        extractor = PDFExtractor(
+            use_document_ai=settings.use_document_ai,
+            document_ai_processor_id=settings.document_ai_processor_id or "",
+            project_id=settings.gcp_project_id,
+        )
+        chunker = ContextAwareChunker()
+        metadata_gen = MetadataGenerator(
+            model_name=settings.gemini_model_metadata,
+            schema_path=settings.metadata_schema_path,
+        )
+        uploader = GCSUploader(
+            bucket_name=settings.gcs_bucket_name,
+            project_id=settings.gcp_project_id,
+        )
+        indexer = VertexSearchIndexer(
+            project_id=settings.gcp_project_id,
+            location=settings.gcp_location,
+            datastore_id=settings.vertex_search_datastore_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — clientinit/credential errors
+        log_api_error(logger, exc, "initializing the pipeline clients")
+        sys.exit(1)
 
     if args.file:
         pdf_paths = [args.file]
@@ -295,10 +317,14 @@ def main() -> None:
     results = []
     for pdf_path in pdf_paths:
         logger.info("Processing: %s", pdf_path.name)
-        result = ingest_file(
-            pdf_path, extractor, chunker, metadata_gen, uploader, indexer,
-            dry_run=args.dry_run,
-        )
+        try:
+            result = ingest_file(
+                pdf_path, extractor, chunker, metadata_gen, uploader, indexer,
+                dry_run=args.dry_run,
+            )
+        except Exception as exc:  # noqa: BLE001 — one bad file/API call shouldn't kill the batch
+            log_api_error(logger, exc, f"ingesting {pdf_path.name}")
+            continue
         results.append(result)
 
         # Update manifest after each successful (non-dry-run) ingestion

@@ -287,6 +287,7 @@ Applies to **every** document in the repo, and is restated (in brief) in each ge
 |---|---|---|---|
 | `ORCHESTRATOR.md` | Governance | — | Active |
 | `human_workflow.md` | Governance (human-facing) | — | Active |
+| `test_ingestion.md` | Operator guide — ingest a PDF + review chunks/tags (non-technical) | — | Active |
 | `MIU_TEMPLATE.md` | Governance | — | Active |
 | `config/clinical_document.md` | External | Yes | Active |
 | `config/dev_document.md` | Internal | Yes | Active |
