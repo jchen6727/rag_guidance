@@ -3,6 +3,10 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Local ingestion review output (scripts/inspect_chunks.py, review_datastore.py)
+ingestion_review/
+indexed_review.md
+
 # C extensions
 *.so
 

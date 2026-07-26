@@ -14,9 +14,9 @@
 
 `preflight_check.sh` does not validate the entire IAM permission list against google cloud (for instance, `google-genai`) -- implement entire IAM permission list for the end to end of the software project.
 
-additionally, Google is limiting deprecated LLM calls, for instance, script fails when using gemini-1.5 or gemini-2.5
+additionally, Google is limiting deprecated LLM calls, for instance, script seems to fail when using gemini < 3.x , see if there is a method of doing a simple query to check the LLM specified is available.
 
-begin documentation of the CI/CD process, should a test run be triggered on pushes to a specific `release` directory? or a manual run?
+begin documentation of the CI/CD process--especially ensuring that changes do not break functionality--, should a test run be triggered on pushes to a specific `release` directory? or a manual run?
 
 notes from test_ingestion.md (project root):
 1. 
@@ -27,35 +27,34 @@ notes from test_ingestion.md (project root):
     source .env  # or: export $(grep -v '^#' .env | xargs)
     set +a
     ```
+
 2.
-    preflight_check.sh does not handle gemini (or generative ai) check>
-    additionally, internal calls should be migrated to vertex instead of generative ai as google-generativeai is deprecated for google-genai
-    suggested notes:
-# =====================================================================
-# TODO: MIGRATION REQUIRED (Assigned to Claude)
-# =====================================================================
-# DEBT: This script currently uses the old, developer-facing Google AI 
-# Studio API backend (://googleapis.com) for a quick, 
-# immediate deployment via an API Key.
-#
-# NEXT STEPS FOR CLAUDE:
-# 1. Migrate the code base from the deprecated `google-generativeai` 
-#    library to the modern unified `google-genai` SDK.
-# 2. Add `vertexai=True` to the client initialization parameters.
-# 3. Swap the `GEMINI_API_KEY` authentication for Google Cloud IAM / 
-#    Application Default Credentials (ADC) service account access.
-# 4. Update deployment infrastructure to target Vertex AI 
-#    (://googleapis.com) inside the enterprise VPC.
-# =====================================================================
+    preflight_check.sh does not handle gemini (or generative ai) checks 
+    additionally, internal calls should be migrated to vertex instead of generative ai, as google-generativeai is deprecated for google-genai
 
 3.
-    clarify -- check that the --dry-run (if it generates tags as indicated by it comment `splits and tags but uploads nothing`) preserves them so we do not need additional API calls (cost) from --dry-run to actual run, or note that it does not generate tags in the test_ingestion.md documentation
-4.
-    ingestion is single threaded and takes about 5 hours for 921 chunks, it seems rate limited on script end to 10 requests per minute though it appears that the service allows significantly more requests at a time than that. additionally, it seems like it may be hitting a token limit as well. Look into ways to improve this and set up a bootstrap document for best method of improving ingestion speed.
-5.
-    `ingestion/metadata_gen.py` contains hard coded LLM prompts (e.g. `parts[0]` on line 160 and `guidance` on line 209). Implement some method to expose this to a user (for instance, in the `config/rta_v1.json` or any `.json` or `.env` we can implement a place to store the LLM prompt string?)
+    ensure for any .sh script that `gcloud` commands are converted to more stable curl & REST API equivalents if possible. this should be tracked as a overall project note/design decisions for any future code work.
 
-*(no developer feedback recorded yet)*
+4.
+    clarify -- check that the --dry-run (if it generates tags as indicated by it comment `splits and tags but uploads nothing`) preserves them so we do not need additional API calls (cost) from --dry-run to actual run, or note that it does not generate tags in the test_ingestion.md documentation
+
+5.
+    ingestion is single threaded and takes about 5 hours for 921 chunks, it seems rate limited on script end to 10 requests per minute though it appears that the service allows significantly more requests at a time than that. additionally, it seems like it may be hitting a token limit as well. Look into ways to improve this (concurrent or batch calls?) and set up a bootstrap document for best method of improving ingestion speed.
+    Addtionally, looking forward, if chunk processing needs context from chapter (thus preventing concurrent processing of all chunks from a chapter), implement some framework that allows for a chunking or processing "strategem" -- would an object be appropriate for this ("processing_strategem")?
+
+6. 
+    additionally, ingestion does not print anything during long ingestion without `verbosity`, but then prints too much with `verbosity`, have some default behavior that indicates some level of progress > for instance x/921 chunks processed.
+
+7.
+    `ingestion/metadata_gen.py` contains hard coded LLM prompts (e.g. `parts[0]` on line 160 and `guidance` on line 209). Implement some method to expose this to a user (for instance, in the `config/rta_v1.json` each `tag` has a `description` field, could this be used, or describe the best `.json` or `.env` location for prompt instructions to be placed. Can implement a place to store the LLM prompt string?
+
+8.
+    noted crash on attempting ingestion -- remarks after running
+    python scripts/batch_ingest.py --file corpus/APA_Boswell_Constantino_Deliberate_Practice_CBT.pdf --verbose
+    which failed while attempting to upload to the Vertex AI Search data store. implement region fix. Of note: `config/settings.py` contains logic to derive the appropriate data store location `self.gcs_datastore_region`, check that these API calls can be "routed" via settings attributes rather than adding additional `.env` rules.
+
+9.
+    implement some checkpointing method in the scripts/batch_ingest.py to preserve state of `.jsonl` or any already parsed information in case of crash.
 
 `<!-- ▲ unprocessed above this line ▲ -->`
 
