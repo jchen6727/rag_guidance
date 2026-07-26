@@ -10,6 +10,50 @@
 ## Feedback log (newest first)
 
 <!-- Developers: prepend dated feedback here. -->
+#TODO[2026-07-25]
+
+`preflight_check.sh` does not validate the entire IAM permission list against google cloud (for instance, `google-genai`) -- implement entire IAM permission list for the end to end of the software project.
+
+additionally, Google is limiting deprecated LLM calls, for instance, script fails when using gemini-1.5 or gemini-2.5
+
+begin documentation of the CI/CD process, should a test run be triggered on pushes to a specific `release` directory? or a manual run?
+
+notes from test_ingestion.md (project root):
+1. 
+    need to load the `.env` from the terminal after creating it:
+
+    ```
+    set -a
+    source .env  # or: export $(grep -v '^#' .env | xargs)
+    set +a
+    ```
+2.
+    preflight_check.sh does not handle gemini (or generative ai) check>
+    additionally, internal calls should be migrated to vertex instead of generative ai as google-generativeai is deprecated for google-genai
+    suggested notes:
+# =====================================================================
+# TODO: MIGRATION REQUIRED (Assigned to Claude)
+# =====================================================================
+# DEBT: This script currently uses the old, developer-facing Google AI 
+# Studio API backend (://googleapis.com) for a quick, 
+# immediate deployment via an API Key.
+#
+# NEXT STEPS FOR CLAUDE:
+# 1. Migrate the code base from the deprecated `google-generativeai` 
+#    library to the modern unified `google-genai` SDK.
+# 2. Add `vertexai=True` to the client initialization parameters.
+# 3. Swap the `GEMINI_API_KEY` authentication for Google Cloud IAM / 
+#    Application Default Credentials (ADC) service account access.
+# 4. Update deployment infrastructure to target Vertex AI 
+#    (://googleapis.com) inside the enterprise VPC.
+# =====================================================================
+
+3.
+    clarify -- check that the --dry-run (if it generates tags as indicated by it comment `splits and tags but uploads nothing`) preserves them so we do not need additional API calls (cost) from --dry-run to actual run, or note that it does not generate tags in the test_ingestion.md documentation
+4.
+    ingestion is single threaded and takes about 5 hours for 921 chunks, it seems rate limited on script end to 10 requests per minute though it appears that the service allows significantly more requests at a time than that. additionally, it seems like it may be hitting a token limit as well. Look into ways to improve this and set up a bootstrap document for best method of improving ingestion speed.
+5.
+    `ingestion/metadata_gen.py` contains hard coded LLM prompts (e.g. `parts[0]` on line 160 and `guidance` on line 209). Implement some method to expose this to a user (for instance, in the `config/rta_v1.json` or any `.json` or `.env` we can implement a place to store the LLM prompt string?)
 
 *(no developer feedback recorded yet)*
 

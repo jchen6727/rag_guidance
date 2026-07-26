@@ -77,24 +77,7 @@ Same preview, but now each chunk is also labeled by the AI (therapy type, clinic
 
 **Get a key once** (free tier available): go to **https://aistudio.google.com/apikey**, create an API key, and paste it into your `.env` file on this line:
 
-<NOTE: deprecating aistudio? gemini? prefer routing through vertex?>
-# =====================================================================
-# TODO: MIGRATION REQUIRED (Assigned to Claude)
-# =====================================================================
-# DEBT: This script currently uses the old, developer-facing Google AI 
-# Studio API backend (://googleapis.com) for a quick, 
-# immediate deployment via an API Key.
-#
-# NEXT STEPS FOR CLAUDE:
-# 1. Migrate the code base from the deprecated `google-generativeai` 
-#    library to the modern unified `google-genai` SDK.
-# 2. Add `vertexai=True` to the client initialization parameters.
-# 3. Swap the `GEMINI_API_KEY` authentication for Google Cloud IAM / 
-#    Application Default Credentials (ADC) service account access.
-# 4. Update deployment infrastructure to target Vertex AI 
-#    (://googleapis.com) inside the enterprise VPC.
-# =====================================================================
-<END>
+
 ```
 GEMINI_API_KEY=paste-your-key-here
 ```
@@ -144,25 +127,11 @@ VERTEX_SEARCH_DATASTORE_ID=your-datastore-id
 VERTEX_SEARCH_ENGINE_ID=your-engine-id
 ```
 
-<NOTE: either add some handling (preferred) or ensure this stays in documentation >
-Load the `.env` from the terminal:
-
-```
-set -a
-source .env  # or: export $(grep -v '^#' .env | xargs)
-set +a
-```
-<END>
-
 ### 3b. Check everything is ready
 
 ```bash
 scripts/preflight_check.sh
 ```
-
-<NOTE: preflight_check.sh does not handle gemini (or generative ai) check>
-additionally, should be migrated to vertex instead of generative ai as google-generativeai is deprecated for google-genai
-<END>
 
 This checks your login, project, billing, required APIs, and permissions, and **prints the exact command to fix anything that's missing.** Fix any red items before continuing.
 
@@ -184,9 +153,6 @@ PYTHONPATH=. python scripts/batch_ingest.py --file corpus/APA_Boswell_Constantin
 ```
 
 If that looks healthy, do the real ingest:
-
-<NOTE: check that the --dry-run (if it generates tags) preserves them so we do not need additional API calls (cost) from --dry-run to actual run>
-<END>
 
 
 ```bash
