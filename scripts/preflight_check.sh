@@ -249,10 +249,10 @@ REQUIRED_PERMISSIONS=(
     "discoveryengine.documents.get"
     "discoveryengine.documents.delete"
     # GCS staging — uploader.py
-    "storage.objects.create"
-    "storage.objects.get"
-    "storage.objects.list"
-    "storage.buckets.get"
+    # "storage.objects.create"
+    # "storage.objects.get"
+    # "storage.objects.list"
+    # "storage.buckets.get"
 )
 
 # `gcloud projects test-iam-permissions` is not a valid gcloud command — the
