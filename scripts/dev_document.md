@@ -58,6 +58,8 @@ notes from test_ingestion.md (project root):
 
 `<!-- ▲ unprocessed above this line ▲ -->`
 
+**Resolution `#DONE[2026-07-26]`:** the `#TODO[2026-07-25]` block above was actioned — see `devlog.md` (2026-07-26 entry) for the per-item status. Implemented: region fix (8), `.env` autoload (1), progress logging (6), crash-safe checkpoint + resume (9, 4), preflight IAM/API expansion (lead + 2 partial), `scripts/check_llm.py` model check (lead), prompt externalization to `config/ingestion_prompt.yaml` (7). Flagged for your input: `google-genai`/Vertex migration (2, 3), throughput/concurrency + `processing_strategem` (5), CI trigger (lead) — bootstrap in `ingestion/INGESTION_PERFORMANCE.md` and starter `.github/workflows/ci.yml`.
+
 ---
 
 ## 1. Scripts inventory
@@ -72,6 +74,7 @@ notes from test_ingestion.md (project root):
 | `verify_datastore.sh` | Fetches the registered DataStore schema (has a hardcoded `PROJECT_ID`/`DATA_STORE_ID` to edit) | No | edit vars in file |
 | `inspect_chunks.py` | **Local** extract→chunk→(optional Gemini tag) preview; writes `ingestion_review/*.review.md` + `.chunks.jsonl`. No cloud. | No | `--no-metadata`, `--limit`, `--out`, `--verbose` |
 | `review_datastore.py` | Lists indexed docs + their tags from the DataStore (CLI counterpart to the Cloud console) | No | `--doc-id`, `--limit`, `--count-only`, `--out`, `--verbose` |
+| `check_llm.py` | Verifies the configured Gemini model is reachable + supports generateContent (catches retired-model failures pre-ingest) | No | `--model`, `--list`, `--verbose` |
 | `_gcp_logging.py` | Shared helper: `setup_logging(verbose)` + `describe_google_error()` (actionable Google API error hints) | — | imported by the scripts |
 
 ## 2. Order dependency (must hold)

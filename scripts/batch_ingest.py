@@ -46,8 +46,44 @@ from ingestion.chunker import ContextAwareChunker
 from ingestion.metadata_gen import MetadataGenerator
 from ingestion.uploader import GCSUploader
 from ingestion.indexer import VertexSearchIndexer
+from models import ChunkMetadata
 
 logger = logging.getLogger(__name__)
+
+
+def _load_metadata_checkpoint(path: Path) -> dict[str, dict]:
+    """Return {chunk_id: metadata_dict} from a checkpoint JSONL, or {} if absent.
+
+    Lets a re-run skip chunks already tagged in a previous (possibly crashed) run,
+    so the expensive Gemini calls are not repeated. Delete the file to force a
+    full re-tag (e.g. after fixing credentials that caused fallback tagging).
+    """
+    cache: dict[str, dict] = {}
+    if not path.exists():
+        return cache
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if rec.get("chunk_id") and rec.get("metadata") is not None:
+                cache[rec["chunk_id"]] = rec["metadata"]
+    return cache
+
+
+def _append_metadata_checkpoint(path: Path, chunk) -> None:
+    """Append one chunk's metadata to the checkpoint JSONL (crash-safe, incremental)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rec = {
+        "chunk_id": chunk.chunk_id,
+        "metadata": chunk.metadata.model_dump() if chunk.metadata else None,
+    }
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
 def ingest_file(
@@ -101,17 +137,33 @@ def ingest_file(
     chunks = chunker.chunk(doc)
     logger.info("  Produced %d chunk(s)", len(chunks))
 
-    # 4. Generate metadata
+    # 4. Generate metadata (checkpoint-aware + resumable; progress at default level)
+    checkpoint_path = settings.checkpoint_dir / f"{doc_id}.jsonl"
+    cache = _load_metadata_checkpoint(checkpoint_path)
+    if cache:
+        logger.info("  Resuming from checkpoint %s: %d chunk(s) already tagged.",
+                    checkpoint_path, len(cache))
     n_failures = 0
-    logger.info("  Generating metadata for %d chunk(s)...", len(chunks))
-    for chunk in chunks:
-        try:
-            metadata = metadata_gen.generate(chunk)
-            metadata.source_file = doc.source_file  # override with actual filename
-            chunk.metadata = metadata
-        except Exception as exc:
-            logger.warning("  Metadata failed for %s: %s", chunk.chunk_id, exc)
-            n_failures += 1
+    n_reused = 0
+    n = len(chunks)
+    step = max(1, n // 20)  # progress roughly every 5%
+    logger.info("  Generating metadata for %d chunk(s)...", n)
+    for i, chunk in enumerate(chunks, 1):
+        if chunk.chunk_id in cache:
+            chunk.metadata = ChunkMetadata(**cache[chunk.chunk_id])
+            n_reused += 1
+        else:
+            try:
+                metadata = metadata_gen.generate(chunk)
+                metadata.source_file = doc.source_file  # override with actual filename
+                chunk.metadata = metadata
+                _append_metadata_checkpoint(checkpoint_path, chunk)
+            except Exception as exc:
+                logger.warning("  Metadata failed for %s: %s", chunk.chunk_id, exc)
+                n_failures += 1
+        if i % step == 0 or i == n:
+            logger.info("  ...metadata %d/%d (%d%%)%s", i, n, int(100 * i / n),
+                        f"  [{n_reused} reused from checkpoint]" if n_reused else "")
 
     # 5. Filter skip_doc_types
     skip_types = set(chunker._config.skip_doc_types)
@@ -298,8 +350,9 @@ def main() -> None:
         )
         indexer = VertexSearchIndexer(
             project_id=settings.gcp_project_id,
-            location=settings.gcp_location,
+            location=settings.discovery_engine_location,      # 'global'/'us'/'eu', not the raw compute region
             datastore_id=settings.vertex_search_datastore_id,
+            api_endpoint=settings.discovery_engine_endpoint,  # regional endpoint (fixes the import crash)
         )
     except Exception as exc:  # noqa: BLE001 — clientinit/credential errors
         log_api_error(logger, exc, "initializing the pipeline clients")

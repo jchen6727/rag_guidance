@@ -7,6 +7,9 @@ __pycache__/
 ingestion_review/
 indexed_review.md
 
+# Crash-safe metadata checkpoints (scripts/batch_ingest.py)
+ingestion_checkpoints/
+
 # C extensions
 *.so
 

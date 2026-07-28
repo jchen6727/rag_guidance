@@ -174,8 +174,9 @@ def main() -> None:
 
     indexer = VertexSearchIndexer(
         project_id=settings.gcp_project_id,
-        location=settings.gcp_location,
+        location=settings.discovery_engine_location,
         datastore_id=settings.vertex_search_datastore_id,
+        api_endpoint=settings.discovery_engine_endpoint,
     )
 
     if args.doc_id:

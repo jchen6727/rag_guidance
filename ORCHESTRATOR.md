@@ -63,6 +63,7 @@ Three actors, one loop, per functional directory:
 | `ORCHESTRATOR.md` (this file) | Whole-repo protocol, boundaries, cohesion, staleness | All agents (ingest first) |
 | `human_workflow.md` | How human clinicians & developers interact with these docs (what to edit, in what order) | Humans (clinicians + developers) |
 | `MIU_TEMPLATE.md` | Clinical-to-Engineering "Minimum Implementable Unit" spec template | Developers + agents |
+| `devlog.md` | Engineering change log + open decisions (dated) | Developers + agents |
 | `CLAUDE.md` | Claude Code operating notes for this repo | Agents (harness) |
 
 ### 2.2 Directory layer (the dual-audience triad)

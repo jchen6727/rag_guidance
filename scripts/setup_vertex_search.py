@@ -62,12 +62,8 @@ def _client_options() -> ClientOptions | None:
         ClientOptions with the regional api_endpoint set, or None for the
         default (global) endpoint.
     """
-    location = settings.gcs_datastore_region
-    if location == "global":
-        return None
-    else:
-        return ClientOptions(f"{location}-discoveryengine.googleapis.com")
-    return None
+    endpoint = settings.discovery_engine_endpoint
+    return ClientOptions(api_endpoint=endpoint) if endpoint else None
 
 
 def create_datastore(dry_run: bool = False) -> str:

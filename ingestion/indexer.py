@@ -22,6 +22,7 @@ import time
 from typing import Optional
 
 from google.api_core import retry as api_retry
+from google.api_core.client_options import ClientOptions
 from google.api_core.exceptions import DeadlineExceeded, ServiceUnavailable
 from google.cloud import discoveryengine_v1 as discoveryengine
 from google.longrunning.operations_pb2 import GetOperationRequest
@@ -61,17 +62,27 @@ class VertexSearchIndexer:
         project_id: str,
         location: str,
         datastore_id: str,
+        api_endpoint: Optional[str] = None,
     ) -> None:
         """
         Args:
             project_id: GCP project ID.
-            location: DataStore location. Use "global" or "us" — must match
-                      the region chosen at DataStore creation (immutable).
+            location: DataStore location — one of "global"/"us"/"eu", matching the
+                      region chosen at DataStore creation (immutable). Pass
+                      ``settings.discovery_engine_location``, NOT the raw
+                      ``gcp_location`` (a compute region like "us-central1" is not
+                      a valid Discovery Engine location and will be misrouted).
             datastore_id: The DataStore resource ID (not the full resource name).
+            api_endpoint: Regional endpoint for non-global locations, e.g.
+                      "us-discoveryengine.googleapis.com"
+                      (``settings.discovery_engine_endpoint``). None uses the
+                      default global endpoint. A wrong/absent endpoint causes the
+                      "endpoint can only serve global region" INVALID_ARGUMENT.
         """
         self._project_id = project_id
         self._location = location
         self._datastore_id = datastore_id
+        self._api_endpoint = api_endpoint
         self._client: Optional[discoveryengine.DocumentServiceClient] = None
 
     @property
@@ -234,11 +245,21 @@ class VertexSearchIndexer:
     def _get_client(self) -> discoveryengine.DocumentServiceClient:
         """Lazy-initialize and return the Discovery Engine document service client.
 
+        Targets the regional endpoint when ``api_endpoint`` was provided, so
+        requests for a non-global DataStore are not sent to the global endpoint.
+
         Returns:
             Authenticated DocumentServiceClient.
         """
         if self._client is None:
-            self._client = discoveryengine.DocumentServiceClient()
+            client_options = (
+                ClientOptions(api_endpoint=self._api_endpoint)
+                if self._api_endpoint
+                else None
+            )
+            self._client = discoveryengine.DocumentServiceClient(
+                client_options=client_options
+            )
         return self._client
 
     def _parse_import_result(self, operation_metadata: dict) -> ImportResult:

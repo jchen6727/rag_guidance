@@ -49,9 +49,13 @@ _SHOWN_TAGS = [
 
 
 def _datastore_parent() -> str:
-    """Build the branch resource name that documents live under."""
+    """Build the branch resource name that documents live under.
+
+    Uses ``discovery_engine_location`` ('global'/'us'/'eu'), not the raw compute
+    region, so it matches how the DataStore was created.
+    """
     return (
-        f"projects/{settings.gcp_project_id}/locations/{settings.gcp_location}"
+        f"projects/{settings.gcp_project_id}/locations/{settings.discovery_engine_location}"
         f"/collections/default_collection/dataStores/{settings.vertex_search_datastore_id}"
         f"/branches/default_branch"
     )
@@ -117,8 +121,12 @@ def main() -> None:
         sys.exit(2)
 
     try:
+        from google.api_core.client_options import ClientOptions
         from google.cloud import discoveryengine_v1 as discoveryengine
-        client = discoveryengine.DocumentServiceClient()
+        endpoint = settings.discovery_engine_endpoint
+        client = discoveryengine.DocumentServiceClient(
+            client_options=ClientOptions(api_endpoint=endpoint) if endpoint else None
+        )
         parent = _datastore_parent()
         logger.info("Listing documents in: %s", parent)
         request = discoveryengine.ListDocumentsRequest(parent=parent, page_size=100)

@@ -146,11 +146,13 @@ PYTHONPATH=. python scripts/setup_vertex_search.py              # actually creat
 
 ### 3d. Ingest the single PDF
 
-Always do a dry run first (it splits and tags but uploads nothing):
+Do a dry run first. **Important:** a dry run still calls Gemini to generate the tags (so it *does* cost API usage) — it only skips the upload/index step. Those tags are **not wasted**: they're saved to a checkpoint in `ingestion_checkpoints/<doc_id>.jsonl`, and the real run below **reuses them instead of re-tagging**, so you don't pay twice.
 
 ```bash
 PYTHONPATH=. python scripts/batch_ingest.py --file corpus/APA_Boswell_Constantino_Deliberate_Practice_CBT.pdf --dry-run
 ```
+
+> If a run crashes partway (as can happen on a long book), just run the same command again — it resumes from the checkpoint and only tags the chunks it hadn't reached yet. To force a full re-tag, delete the file in `ingestion_checkpoints/`.
 
 If that looks healthy, do the real ingest:
 

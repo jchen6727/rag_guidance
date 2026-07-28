@@ -26,6 +26,7 @@ CHECK_MARK="✓"
 CROSS_MARK="✗"
 
 pass() { echo "${CHECK_MARK} $1"; }
+warn() { echo "! $1"; }   # advisory only — does not count as a failure
 fail() {
     echo "${CROSS_MARK} $1"
     FAILURES=$((FAILURES + 1))
@@ -157,9 +158,10 @@ fi
 # 4. Required APIs enabled
 # ---------------------------------------------------------------------------
 REQUIRED_APIS=(
-    "discoveryengine.googleapis.com"
-    "storage.googleapis.com"
-    "aiplatform.googleapis.com"
+    "discoveryengine.googleapis.com"   # Vertex AI Search DataStore + import
+    "storage.googleapis.com"           # GCS staging of PDFs + chunk JSONL
+    "aiplatform.googleapis.com"        # Vertex AI (future google-genai/Vertex path)
+    "generativelanguage.googleapis.com" # Gemini Developer API (current metadata_gen path)
 )
 ENABLED_APIS="$(gcloud services list --project="${GCP_PROJECT_ID}" \
     --format="value(config.name)" 2>&1)"
@@ -190,39 +192,49 @@ fi
 # or isn't reachable, the Python client's LRO calls don't fail fast — they
 # hang until the RPC/LRO timeout (up to 600s) with no useful error. Catch
 # a bad/unreachable GCP_LOCATION here in seconds instead.
-KNOWN_DISCOVERYENGINE_LOCATIONS=("global" "us" "eu")
-LOCATION_KNOWN=false
-for loc in "${KNOWN_DISCOVERYENGINE_LOCATIONS[@]}"; do
-    if [[ "${GCP_LOCATION}" == "${loc}" ]]; then
-        LOCATION_KNOWN=true
-        break
-    fi
-done
+# Discovery Engine only serves 'global'/'us'/'eu'. The Python code DERIVES this
+# from GCP_LOCATION (config/settings.py::discovery_engine_location): a compute
+# region like 'us-central1' maps to 'us'. Mirror that derivation here so this
+# check matches runtime behavior instead of rejecting valid compute regions.
 
-if [[ "${GCP_LOCATION}" == "global" ]]; then
+case "$(echo $GCP_LOCATION | tr '[:upper:]' '[:lower:]')" in
+    us*)            DE_REGION="us" ;;
+    eu*|europe*)    DE_REGION="eu" ;;
+    global|"")      DE_REGION="global" ;;
+    *)              DE_REGION="global" ;;
+esac
+
+if [[ "${DE_REGION}" == "global" ]]; then
     DISCOVERYENGINE_ENDPOINT="discoveryengine.googleapis.com"
 else
-    DISCOVERYENGINE_ENDPOINT="${GCP_LOCATION}-discoveryengine.googleapis.com"
+    DISCOVERYENGINE_ENDPOINT="${DE_REGION}-discoveryengine.googleapis.com"
 fi
 
-if [[ "${LOCATION_KNOWN}" != "true" ]]; then
-    fail "GCP_LOCATION '${GCP_LOCATION}' is not a recognized Discovery Engine location (${KNOWN_DISCOVERYENGINE_LOCATIONS[*]})"
-    fix "Set GCP_LOCATION to one of: ${KNOWN_DISCOVERYENGINE_LOCATIONS[*]} in .env
-Note: the DataStore region is immutable after creation — verify before running setup_vertex_search.py."
-elif ! getent hosts "${DISCOVERYENGINE_ENDPOINT}" >/dev/null 2>&1 && ! host "${DISCOVERYENGINE_ENDPOINT}" >/dev/null 2>&1 && ! nslookup "${DISCOVERYENGINE_ENDPOINT}" >/dev/null 2>&1; then
-    fail "Cannot resolve Discovery Engine endpoint '${DISCOVERYENGINE_ENDPOINT}' for GCP_LOCATION='${GCP_LOCATION}'"
-    fix "Check DNS/network connectivity, and confirm GCP_LOCATION='${GCP_LOCATION}' is correct.
-setup_vertex_search.py will otherwise hang until its RPC/LRO timeout (up to 600s) instead of failing fast."
+if [[ "${GCP_LOCATION}" != "${DE_REGION}" ]]; then
+    warn "GCP_LOCATION='${GCP_LOCATION}' is a compute region; Discovery Engine calls are routed to the '${DE_REGION}' multi-region (derived). This is handled automatically by settings.discovery_engine_location."
+fi
+
+if ! getent hosts "${DISCOVERYENGINE_ENDPOINT}" >/dev/null 2>&1 && ! host "${DISCOVERYENGINE_ENDPOINT}" >/dev/null 2>&1 && ! nslookup "${DISCOVERYENGINE_ENDPOINT}" >/dev/null 2>&1; then
+    fail "Cannot resolve Discovery Engine endpoint '${DISCOVERYENGINE_ENDPOINT}' (derived from GCP_LOCATION='${GCP_LOCATION}')"
+    fix "Check DNS/network connectivity, and confirm GCP_LOCATION='${GCP_LOCATION}' maps to a valid region (us/eu/global).
+The Python client will otherwise fail with INVALID_ARGUMENT or hang until its RPC/LRO timeout."
 else
-    pass "GCP_LOCATION='${GCP_LOCATION}' resolves to reachable endpoint: ${DISCOVERYENGINE_ENDPOINT}"
+    pass "Discovery Engine region '${DE_REGION}' resolves to reachable endpoint: ${DISCOVERYENGINE_ENDPOINT}"
 fi
 
 # ---------------------------------------------------------------------------
 # 6. IAM permissions required by setup_vertex_search.py
 # ---------------------------------------------------------------------------
+# Full end-to-end permission set: provisioning (setup_vertex_search.py),
+# ingestion import + review (batch_ingest.py, review_datastore.py), purge
+# (purge_datastore.py), and GCS staging (uploader.py). Grouped by the script
+# that needs each. Gemini (generativelanguage) auth is validated separately by
+# scripts/check_llm.py — it is not an IAM permission on this project.
 REQUIRED_PERMISSIONS=(
+    # project / service usage
     "resourcemanager.projects.get"
     "serviceusage.services.list"
+    # provisioning — setup_vertex_search.py
     "discoveryengine.dataStores.create"
     "discoveryengine.dataStores.list"
     "discoveryengine.dataStores.get"
@@ -231,6 +243,16 @@ REQUIRED_PERMISSIONS=(
     "discoveryengine.schemas.get"
     "discoveryengine.engines.create"
     "discoveryengine.engines.get"
+    # ingestion / review / purge — batch_ingest.py, review_datastore.py, purge_datastore.py
+    "discoveryengine.documents.import"
+    "discoveryengine.documents.list"
+    "discoveryengine.documents.get"
+    "discoveryengine.documents.delete"
+    # GCS staging — uploader.py
+    "storage.objects.create"
+    "storage.objects.get"
+    "storage.objects.list"
+    "storage.buckets.get"
 )
 
 # `gcloud projects test-iam-permissions` is not a valid gcloud command — the

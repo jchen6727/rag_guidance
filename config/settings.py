@@ -15,6 +15,45 @@ import os
 from pathlib import Path
 
 
+def _load_dotenv() -> None:
+    """Load key=value pairs from a local .env into os.environ at import time.
+
+    This means callers no longer have to `set -a; source .env; set +a` before
+    running a script — importing `config.settings` is enough. Real environment
+    variables always win (``override=False``): anything already exported takes
+    precedence over the file. Set ``ENV_FILE`` to point at a different file.
+
+    Uses python-dotenv when installed; otherwise falls back to a minimal parser
+    so there is no hard dependency.
+    """
+    env_path = Path(os.environ.get("ENV_FILE", ".env"))
+    if not env_path.exists():
+        return
+    try:
+        from dotenv import load_dotenv  # type: ignore
+
+        load_dotenv(env_path, override=False)
+        return
+    except Exception:
+        pass
+    # Fallback: parse KEY=VALUE lines ourselves (no python-dotenv available).
+    try:
+        for raw in env_path.read_text().splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key:
+                os.environ.setdefault(key, val)
+    except OSError:
+        pass
+
+
+_load_dotenv()
+
+
 class Settings:
     """Validated configuration loaded from environment variables.
 
@@ -51,8 +90,35 @@ class Settings:
         if loc.startswith(("eu", "europe")):
             return "eu"
         # Fallback for explicit 'global' or unexpected local regions
-        return "global"        
-    
+        return "global"
+
+    @property
+    def discovery_engine_location(self) -> str:
+        """Discovery Engine multi-region ('global' | 'us' | 'eu').
+
+        Discovery Engine (Vertex AI Search) only accepts these three locations —
+        NOT compute regions like 'us-central1'. This derives the correct value
+        from ``gcp_location`` (e.g. 'us-central1' -> 'us'). **Route every
+        Discovery Engine call through this, never the raw ``gcp_location``**, or
+        the request is sent to a region the endpoint cannot serve
+        (INVALID_ARGUMENT). This is exactly what crashed the first ingest.
+        """
+        return self.gcs_datastore_region
+
+    @property
+    def discovery_engine_endpoint(self) -> str | None:
+        """Regional API endpoint for the Discovery Engine client, or None (global).
+
+        For a non-global location the client MUST target
+        ``{region}-discoveryengine.googleapis.com`` or requests are misrouted and
+        either fail with INVALID_ARGUMENT or hang until timeout. Pass this to a
+        client via ``ClientOptions(api_endpoint=...)``.
+        """
+        loc = self.discovery_engine_location
+        if loc == "global":
+            return None
+        return f"{loc}-discoveryengine.googleapis.com"
+
     # -----------------------------------------------------------------------
     # Google Cloud Storage
     # -----------------------------------------------------------------------
@@ -130,14 +196,34 @@ class Settings:
         return Path(os.environ.get("MANIFEST_PATH", ".ingestion_manifest.json"))
 
     @property
+    def checkpoint_dir(self) -> Path:
+        """Directory for per-document metadata checkpoints (crash-safe resume).
+
+        batch_ingest writes each chunk's generated metadata here as it goes, so a
+        crash preserves the expensive Gemini output and a re-run resumes instead
+        of re-paying. One JSONL per doc_id.
+        """
+        return Path(os.environ.get("CHECKPOINT_DIR", "ingestion_checkpoints"))
+
+    @property
     def chunk_config_path(self) -> Path:
         """Path to chunk_config.yaml."""
         return Path(os.environ.get("CHUNK_CONFIG_PATH", "config/chunk_config.yaml"))
 
     @property
     def prompt_config_path(self) -> Path:
-        """Path to prompt_config.yaml."""
+        """Path to prompt_config.yaml (query-time persona templates)."""
         return Path(os.environ.get("PROMPT_CONFIG_PATH", "config/prompt_config.yaml"))
+
+    @property
+    def ingestion_prompt_path(self) -> Path:
+        """Path to ingestion_prompt.yaml (hand-authored Gemini extraction framing).
+
+        Holds the natural-language scaffolding/guidance for metadata_gen's prompt;
+        the enum vocabulary is generated from the schema, not stored here. Missing
+        or invalid file → metadata_gen uses built-in defaults.
+        """
+        return Path(os.environ.get("INGESTION_PROMPT_PATH", "config/ingestion_prompt.yaml"))
 
     @property
     def metadata_schema_path(self) -> Path:

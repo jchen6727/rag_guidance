@@ -75,6 +75,9 @@ class MetadataGenerator:
         # Controlled vocabulary derived from the authoritative schema; drives
         # both prompt construction and response coercion.
         self._vocab = SchemaVocabulary(self._schema)
+        # Hand-authored prompt scaffolding (config/ingestion_prompt.yaml); falls
+        # back to built-in defaults if the file is missing or unreadable.
+        self._prompt_cfg = self._load_prompt_config()
         self._client: Optional[genai.GenerativeModel] = None
         self._api_key = api_key
 
@@ -156,16 +159,15 @@ class MetadataGenerator:
         """
         properties = self._schema.get("properties", {})
         schema_excerpt = json.dumps(properties, indent=2)
+        cfg = self._prompt_cfg
 
         parts = [
-            "You are extracting structured metadata for a psychotherapy guidance "
-            "RAG corpus (CBT/DBT/IPT clinicians; real-time RTA and after-session "
-            "ASA retrieval pipelines).",
-            "Respond ONLY with valid JSON matching this schema (no markdown, no prose):",
+            cfg["system_preamble"],
+            cfg["output_instruction"],
             "",
             schema_excerpt,
             "",
-            "Allowed values for controlled fields (use these EXACT tokens):",
+            cfg["allowed_values_header"],
             self._enum_legend(),
             "",
             self._extraction_guidance(),
@@ -179,7 +181,7 @@ class MetadataGenerator:
             "Chunk text to analyze:",
             chunk.text,
             "",
-            "Output valid JSON only.",
+            cfg["closing_instruction"],
         ]
 
         return "\n".join(parts)
@@ -199,30 +201,66 @@ class MetadataGenerator:
         return "\n".join(lines)
 
     def _extraction_guidance(self) -> str:
-        """Return psychotherapy-specific extraction notes drawn from schema `notes`.
+        """Return the clinical extraction guidance block for the prompt.
 
-        Aligned to the active RTA schema (``rta_v1.json``): the directionality +
-        applies_when relational contraindication model, not the removed
-        ``practice_recommendation_level`` / ``missingness`` fields.
+        Base guidance bullets come from ``config/ingestion_prompt.yaml`` (or the
+        built-in defaults); the schema ``notes`` (``domain_vs_modality`` and
+        ``directionality_applies_when``) are appended so the guidance always
+        tracks the active schema.
         """
         notes = self._schema.get("notes", {})
-        guidance = [
-            "Extraction guidance:",
-            "- domain is document-level (the source's overall orientation); "
-            "therapeutic_modality is chunk-level (what THIS passage addresses) — "
-            "they may differ. " + notes.get("domain_vs_modality", ""),
-            "- directionality and applies_when are ONE decision: does the passage say to "
-            "DO something (indicated), AVOID something (contraindicated), or proceed with "
-            "CAUTION (cautionary), and under exactly which events/presentations/patient-states "
-            "does that apply? If it applies whenever the modality is active, return applies_when "
-            "as an empty list. A contraindicated or cautionary passage MUST list at least one "
-            "applies_when value. " + notes.get("directionality_applies_when", ""),
-            "- clinical_caution and any contraindicated/cautionary directionality are "
-            "patient-safety fields: extract them explicitly and never omit a stated contraindication.",
-            "- session_event_tags here tag what the passage is ABOUT (a retrieval target), "
-            "NOT a live event; 'none' means the passage addresses no specific in-session event.",
-        ]
-        return "\n".join(line for line in guidance if line.strip())
+        lines: list[str] = ["Extraction guidance:"]
+        lines.extend(self._prompt_cfg.get("guidance", []))
+        for key in ("domain_vs_modality", "directionality_applies_when"):
+            if notes.get(key):
+                lines.append("- " + notes[key])
+        return "\n".join(line for line in lines if str(line).strip())
+
+    # Built-in fallback used when config/ingestion_prompt.yaml is absent/invalid.
+    _DEFAULT_PROMPT_CFG = {
+        "system_preamble": (
+            "You are extracting structured metadata for a psychotherapy guidance "
+            "RAG corpus (CBT/DBT/IPT clinicians; real-time RTA retrieval pipeline)."
+        ),
+        "output_instruction": "Respond ONLY with valid JSON matching this schema (no markdown, no prose):",
+        "allowed_values_header": "Allowed values for controlled fields (use these EXACT tokens):",
+        "guidance": [
+            "- domain is document-level (the source's overall orientation); therapeutic_modality "
+            "is chunk-level (what THIS passage addresses) — they may differ.",
+            "- directionality and applies_when are ONE decision: does the passage say to DO something "
+            "(indicated), AVOID something (contraindicated), or proceed with CAUTION (cautionary), and "
+            "under exactly which events/presentations/patient-states does that apply? If it applies "
+            "whenever the modality is active, return applies_when as an empty list. A contraindicated "
+            "or cautionary passage MUST list at least one applies_when value.",
+            "- clinical_caution and any contraindicated/cautionary directionality are patient-safety "
+            "fields: extract them explicitly and never omit a stated contraindication.",
+            "- session_event_tags here tag what the passage is ABOUT (a retrieval target), NOT a live "
+            "event; 'none' means the passage addresses no specific in-session event.",
+        ],
+        "closing_instruction": "Output valid JSON only.",
+    }
+
+    def _load_prompt_config(self) -> dict:
+        """Load config/ingestion_prompt.yaml, merged over the built-in defaults.
+
+        Any key the file omits (or the whole file, if missing/invalid) falls back
+        to ``_DEFAULT_PROMPT_CFG`` so a bad edit degrades gracefully rather than
+        breaking ingestion.
+        """
+        cfg = dict(self._DEFAULT_PROMPT_CFG)
+        try:
+            import yaml  # local import: metadata_gen has no hard yaml dependency otherwise
+
+            from config.settings import settings
+
+            path = settings.ingestion_prompt_path
+            if path.exists():
+                loaded = yaml.safe_load(path.read_text()) or {}
+                if isinstance(loaded, dict):
+                    cfg.update({k: v for k, v in loaded.items() if v is not None})
+        except Exception as exc:  # noqa: BLE001 — never fail ingestion on prompt config
+            logger.warning("Could not load ingestion prompt config (%s); using defaults.", exc)
+        return cfg
 
     def _call_gemini(self, prompt: str) -> dict:
         """Send prompt to Gemini and return the parsed JSON response.
