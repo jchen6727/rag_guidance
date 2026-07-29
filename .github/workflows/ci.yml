@@ -1,0 +1,50 @@
+# Starter CI for rag_guidance — see devlog.md #TODO(ci-cd).
+#
+# Goal: catch changes that break the schema or the core ingestion contract BEFORE
+# they merge. Scoped to the stable, cloud-free tests plus the JSON schema parse
+# gate. The query-path tests (tests/test_retrieval.py) and one chunker test are
+# intentionally excluded until that path is implemented — they currently raise
+# NotImplementedError by design.
+#
+# TRIGGER — decided 2026-07-27 (devlog.md): pull requests to main + manual dispatch.
+#
+# IAM — this job runs only cloud-free tests, so it needs NO GCP credentials.
+# A future integration job (running batch_ingest against a test project) would need
+# a service account via Workload Identity Federation (no key files) with:
+#   roles/discoveryengine.editor, roles/storage.objectAdmin (on the bucket),
+#   roles/aiplatform.user (Vertex Gemini). See devlog.md "CI IAM".
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}   # manual "Run workflow" button
+
+jobs:
+  schema-and-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install minimal test dependencies
+        # Cloud-free subset: enough to import config/, models, and ingestion.metadata_gen
+        # without pulling torch/sentence-transformers. Swap for `pip install -r requirements.txt`
+        # if/when the full suite (chunker/extractor) is added to CI.
+        run: pip install pytest pydantic pyyaml google-genai python-dotenv
+
+      - name: JSON schema parse gate
+        run: PYTHONPATH=. python -m pytest tests/test_schema_valid.py -q
+
+      - name: Schema + model + loader + metadata + strategy tests
+        run: |
+          PYTHONPATH=. python -m pytest \
+            tests/test_rta_schema.py \
+            tests/test_schema_loader.py \
+            tests/test_metadata_gen.py \
+            tests/test_processing_strategy.py \
+            -q

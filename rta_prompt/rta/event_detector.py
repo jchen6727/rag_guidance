@@ -26,7 +26,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-import google.generativeai as genai
+from google import genai  # noqa: F401 — query path is stubbed; full Vertex/genai migration pending (devlog.md#TODO(genai-migration-querypath))
 
 from rta_prompt.models import DetectedEvent
 

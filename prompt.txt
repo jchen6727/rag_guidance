@@ -1,0 +1,84 @@
+Run results---
+```
+(rag) ➜  rag_guidance git:(mcc_ingestion) ✗ python scripts/batch_ingest.py --file corpus/APA_Boswell_Constantino_Deliberate_Practice_CBT.pdf
+13:24:44 INFO    __main__: Active metadata schema: config/rta_v1.json
+13:24:44 INFO    __main__: Found 1 PDF(s) to ingest.
+13:24:44 INFO    __main__: Processing: APA_Boswell_Constantino_Deliberate_Practice_CBT.pdf
+13:24:44 INFO    __main__:   doc_id: ef0c4d1d912afbc7...
+13:24:44 INFO    __main__:   Extracting text from APA_Boswell_Constantino_Deliberate_Practice_CBT.pdf...
+13:24:50 INFO    __main__:   Extracted 216 page(s)
+13:24:50 INFO    __main__:   Chunking...
+13:24:53 INFO    ingestion.chunker: Loading embedding model: all-MiniLM-L6-v2
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+13:24:53 WARNING huggingface_hub.utils._http: Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights: 100%|███████████████████████████████████████████████████████████████████████████████████████████████| 103/103 [00:00<00:00, 6883.69it/s]
+13:24:58 INFO    __main__:   Produced 921 chunk(s)
+13:24:58 INFO    __main__:   Generating metadata for 921 chunk(s)...
+^CTraceback (most recent call last):
+  File "/Users/jchen/dev/rag_guidance/scripts/batch_ingest.py", line 340, in <module>
+    main()
+  File "/Users/jchen/dev/rag_guidance/scripts/batch_ingest.py", line 321, in main
+    result = ingest_file(
+             ^^^^^^^^^^^^
+  File "/Users/jchen/dev/rag_guidance/scripts/batch_ingest.py", line 109, in ingest_file
+    metadata = metadata_gen.generate(chunk)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jchen/dev/rag_guidance/ingestion/metadata_gen.py", line 99, in generate
+    raw = self._call_gemini(prompt)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jchen/dev/rag_guidance/ingestion/metadata_gen.py", line 249, in _call_gemini
+    response = client.generate_content(prompt)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/google/generativeai/generative_models.py", line 331, in generate_content
+    response = self._client.generate_content(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/google/ai/generativelanguage_v1beta/services/generative_service/client.py", line 835, in generate_content
+    response = rpc(
+               ^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/google/api_core/gapic_v1/method.py", line 128, in __call__
+    return wrapped_func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/google/api_core/retry/retry_unary.py", line 294, in retry_wrapped_func
+    return retry_target(
+           ^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/google/api_core/retry/retry_unary.py", line 147, in retry_target
+    result = target()
+             ^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/google/api_core/timeout.py", line 130, in func_with_timeout
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/google/api_core/grpc_helpers.py", line 55, in error_remapped_callable
+    return callable_(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/grpc/_interceptor.py", line 276, in __call__
+    response, ignored_call = self._with_call(
+                             ^^^^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/grpc/_interceptor.py", line 328, in _with_call
+    call = self._interceptor.intercept_unary_unary(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/google/ai/generativelanguage_v1beta/services/generative_service/transports/grpc.py", line 79, in intercept_unary_unary
+    response = continuation(client_call_details, request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/grpc/_interceptor.py", line 314, in continuation
+    response, call = self._thunk(new_method).with_call(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/grpc/_channel.py", line 1170, in with_call
+    state, call = self._blocking(
+                  ^^^^^^^^^^^^^^^
+  File "/Users/jchen/miniconda3/envs/rag/lib/python3.12/site-packages/grpc/_channel.py", line 1143, in _blocking
+    event = call.next_event()
+            ^^^^^^^^^^^^^^^^^
+  File "src/python/grpcio/grpc/_cython/_cygrpc/channel.pyx.pxi", line 388, in grpc._cython.cygrpc.SegregatedCall.next_event
+  File "src/python/grpcio/grpc/_cython/_cygrpc/channel.pyx.pxi", line 211, in grpc._cython.cygrpc._next_call_event
+  File "src/python/grpcio/grpc/_cython/_cygrpc/channel.pyx.pxi", line 205, in grpc._cython.cygrpc._next_call_event
+  File "src/python/grpcio/grpc/_cython/_cygrpc/completion_queue.pyx.pxi", line 97, in grpc._cython.cygrpc._latent_event
+  File "src/python/grpcio/grpc/_cython/_cygrpc/completion_queue.pyx.pxi", line 80, in grpc._cython.cygrpc._internal_latent_event
+  File "src/python/grpcio/grpc/_cython/_cygrpc/completion_queue.pyx.pxi", line 61, in grpc._cython.cygrpc._next
+KeyboardInterrupt
+```
+
+NOTES --
+```
+saw 216 calls to Gemini, (assuming would need 921 calls per chunk?)
+token use was 955.61K ingested 360.43K output
+```

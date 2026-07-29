@@ -58,7 +58,7 @@ notes from test_ingestion.md (project root):
 
 `<!-- ▲ unprocessed above this line ▲ -->`
 
-**Resolution `#DONE[2026-07-26]`:** the `#TODO[2026-07-25]` block above was actioned — see `devlog.md` (2026-07-26 entry) for the per-item status. Implemented: region fix (8), `.env` autoload (1), progress logging (6), crash-safe checkpoint + resume (9, 4), preflight IAM/API expansion (lead + 2 partial), `scripts/check_llm.py` model check (lead), prompt externalization to `config/ingestion_prompt.yaml` (7). Flagged for your input: `google-genai`/Vertex migration (2, 3), throughput/concurrency + `processing_strategem` (5), CI trigger (lead) — bootstrap in `ingestion/INGESTION_PERFORMANCE.md` and starter `.github/workflows/ci.yml`.
+**Resolution `#DONE[2026-07-27]`:** the `#TODO[2026-07-25]` block above is fully actioned — see `devlog.md` (2026-07-26 + 2026-07-27 entries) for per-item status. 2026-07-26: region fix (8), `.env` autoload (1), progress (6), checkpoint+resume (9, 4), preflight IAM/API (lead + 2), `check_llm.py` (lead), prompt externalization (7). 2026-07-27 (the four decisions): `google-genai`+Vertex/ADC migration (2), pluggable chapter-context processing framework `ingestion/processing_strategy.py` + concurrency (5), `.sh`→REST in `preflight_check.sh` (3), CI on PRs-to-main + manual with CI-IAM doc (lead). Non-blocking follow-ups tracked in `devlog.md`: pick a current Gemini model id, tune chapter-context heuristic, live integration CI.
 
 ---
 

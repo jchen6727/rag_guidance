@@ -20,7 +20,7 @@ google-cloud-storage>=2.16.0
 google-cloud-documentai>=2.27.0
 # extractor.py — OCR fallback for scanned PDFs (optional at runtime)
 
-google-generativeai>=0.7.2
+google-genai>=1.0.0
 # metadata_gen.py — Gemini structured metadata extraction
 
 # ---------------------------------------------------------------------------

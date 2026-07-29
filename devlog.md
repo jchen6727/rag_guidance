@@ -8,6 +8,85 @@ Newest entry on top.
 
 ---
 
+## 2026-07-27 — Four decisions implemented
+
+All four `2026-07-26` open decisions were answered and built. Verification:
+`107 passed` (was 97; +10 strategy tests), every touched module compiles,
+`bash -n` clean on `preflight_check.sh`, CI YAML valid. The 17 failing tests are
+the unchanged pre-existing stubs (`test_retrieval.py`, one `test_chunker`).
+
+- `#DONE(genai-migration)[2026-07-27]` **Decision 1 — migrate to `google-genai` + Vertex/ADC only.**
+  - `ingestion/metadata_gen.py`: `from google import genai`; `_get_client()` builds
+    `genai.Client(vertexai=True, project=GCP_PROJECT_ID, location=GCP_LOCATION)`;
+    `_call_gemini()` uses `client.models.generate_content(...)`. Dropped the `api_key`
+    ctor param, `GEMINI_API_KEY` usage, and `import os`.
+  - `scripts/check_llm.py`: rewritten to the Vertex client; definitive check is a 1-token
+    `generate_content`. `--list` uses `client.models.list()`.
+  - `config/settings.gemini_api_key` marked DEPRECATED (retained, unused).
+  - `requirements.txt`, `ingestion/requirements.txt`, `.github/workflows/ci.yml`:
+    `google-generativeai` → `google-genai>=1.0.0`. `_gcp_logging` auth hint updated to ADC.
+  - `#NOTE(vertex-region)[2026-07-27]` The Vertex Gemini client uses the **raw** `GCP_LOCATION`
+    (a compute region / "global"), unlike Discovery Engine (multi-region). If a model isn't
+    served in that region, `generate` fails — `scripts/check_llm.py` catches it up front.
+  - `#NOTE(model-id)[2026-07-27]` Default model is still `gemini-1.5-pro` (`settings.gemini_model_metadata`).
+    You flagged that Google is retiring older Gemini models — update `GEMINI_MODEL_METADATA`
+    in `.env` (e.g. a `gemini-2.x`) and confirm with `check_llm.py` before a big run. Not
+    changed by me because it's a config/cost choice.
+  - `#TODO(genai-migration-querypath)[2026-07-27]` The **stubbed query path** still contains
+    old-SDK *usage* (`genai.GenerativeModel`, `genai.configure`) inside `retrieval/reranker.py`,
+    `generation/response_gen.py`, `rta_prompt/rta/event_detector.py`. Their import lines were
+    swapped to `from google import genai` so the repo stays installable with only `google-genai`
+    (bodies raise `NotImplementedError`, so the old calls never run), but the method bodies must
+    be rewritten to `genai.Client(vertexai=True)` + `client.models.generate_content(...)` when
+    the query path is implemented. Tracked here so it isn't forgotten.
+
+- `#DONE(processing-strategem)[2026-07-27]` **Decision 2 — chapter context + pluggable framework.**
+  - New `ingestion/processing_strategy.py`: `ProcessingStrategy` base + `IndependentStrategy`
+    (full concurrency, no context) and `ChapterContextStrategy` (default: groups consecutive
+    chunks by `parent_section`, tags each with chapter heading + preceding in-chapter text,
+    runs chapters concurrently / chunks-within-chapter sequentially). Register new strategies
+    in `_STRATEGIES` — the ingest loop doesn't change.
+  - `scripts/batch_ingest.py`: `_generate_all_metadata()` runs units via a bounded
+    `ThreadPoolExecutor`, threads chapter context into `metadata_gen.generate(chunk, context)`,
+    writes the checkpoint under a lock (crash-safe), reuses cached chunks, logs progress. New
+    flags `--strategy` / `--concurrency`; settings `INGEST_STRATEGY` (default `chapter`) /
+    `INGEST_CONCURRENCY` (default 4). Tests: `tests/test_processing_strategy.py` (10).
+  - `#NOTE(context-content)[2026-07-27]` The chapter-context *content* (heading + preceding
+    text, 1500-char budget) is a heuristic. Whether it improves tag quality is empirical —
+    tune `context_char_budget` / the `context_for` text once you can eval tags. Not blocking.
+
+- `#DONE(sh-to-rest)[2026-07-27]` **Decision 4 — route `.sh` checks through curl/REST.**
+  Adopted as standing policy. `preflight_check.sh` now uses REST for the programmatic checks:
+  project (`cloudresourcemanager projects.get`), billing (`cloudbilling …/billingInfo`),
+  and enabled APIs (`serviceusage services.list`, paginated via a `python3`/`urllib` helper).
+  A single ADC token is acquired once (§1) and reused (incl. the existing IAM check). Kept on
+  gcloud per policy: `gcloud auth …` (auth), `gcloud config get-value` (local, no REST
+  equivalent), and `gcloud services enable` / IAM binding commands in *fix* text (guidance).
+
+- `#DONE(ci-cd)[2026-07-27]` **Decision 3 — CI on PRs-to-main + manual; CI IAM.**
+  `.github/workflows/ci.yml`: `pull_request` → `main` + `workflow_dispatch`; runs the schema
+  parse gate + the stable cloud-free tests (now incl. strategy tests). **CI IAM:** the current
+  job needs **no GCP credentials** (cloud-free). See "CI IAM" below for the future
+  integration-CI grant.
+
+### CI IAM (for a future live-integration job)
+
+The stable CI needs nothing. If/when a job actually runs `batch_ingest` against a **test**
+project, provision a service account via **Workload Identity Federation** (no exported keys)
+with least-privilege roles:
+
+| Role | Why |
+|---|---|
+| `roles/discoveryengine.editor` | create/import/list/delete DataStore documents |
+| `roles/storage.objectAdmin` (scoped to the test bucket) | stage PDFs + chunk JSONL |
+| `roles/aiplatform.user` | Vertex Gemini `generate_content` |
+| `roles/serviceusage.serviceUsageViewer` | preflight's services check |
+
+Keep this off the default PR gate (it costs money and needs secrets); make it a manual /
+labeled workflow. `#TODO(ci-integration)[2026-07-27]` — build only when a test project exists.
+
+---
+
 ## 2026-07-26 — Response to `scripts/dev_document.md` change requests
 
 Source: the `#TODO[2026-07-25]` feedback block at the top of `scripts/dev_document.md`
@@ -119,12 +198,21 @@ byte-compiles; `bash -n` clean on `preflight_check.sh`.
   `settings.discovery_engine_location` / `discovery_engine_endpoint`. Never pass the raw
   `gcp_location` to a Discovery Engine client.
 
-## Open decisions (need a one-line answer from you)
+## Open decisions — ALL RESOLVED 2026-07-27 (implemented; see the 2026-07-27 entry at top)
+
+All four answered and built. Remaining follow-ups are non-blocking notes in the 2026-07-27
+entry: `#NOTE(model-id)` (pick a current Gemini model in `.env`), `#NOTE(context-content)`
+(tune chapter-context heuristic once tags can be evaluated), `#TODO(ci-integration)` (live CI
+only when a test project exists). Original answers retained below for the record.
 
 1. **Gemini backend:** migrate to `google-genai` + Vertex/ADC only, or keep the API-key path as
    a fallback? (`#TODO(genai-migration)`)
+   answer: decision to migrate to google-genai + Vertex/ADC only
 2. **Chapter context:** do metadata tags need cross-chunk context, or is per-chunk independent
    tagging acceptable? (`#TODO(processing-strategem)` — determines the concurrency ceiling)
+   answer: use chapter context, acceptable to limit concurrency ceiling to handle this process, have framework in proper directory so that
 3. **CI trigger:** PRs-to-main + manual (recommended), or a `release/` path trigger?
    (`#TODO(ci-cd)`)
+   PRs-to-main + manual for CI trigger. Establish any additional IAM permissions that may be needed.
 4. **`.sh` → REST policy:** adopt as standing policy? (`#TODO(sh-to-rest)`)
+   adopt as standing policy, 

@@ -95,6 +95,12 @@ else
     pass "Application Default Credentials available"
 fi
 
+# Standing policy (devlog.md#DONE(sh-to-rest)): programmatic checks below use
+# curl/REST with this ADC token; only interactive auth (`gcloud auth ...`) and
+# one-shot enablement (`gcloud services enable`) remain on gcloud. Acquired once
+# here and reused by the project / billing / services / IAM checks.
+ACCESS_TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null)"
+
 # ---------------------------------------------------------------------------
 # 2. Project exists and matches GCP_PROJECT_ID / active gcloud config
 # ---------------------------------------------------------------------------
@@ -106,8 +112,12 @@ if [[ -z "${GCP_PROJECT_ID}" ]]; then
     exit 1
 fi
 
-if ! gcloud projects describe "${GCP_PROJECT_ID}" --format="value(projectId)" >/dev/null 2>&1; then
-    fail "Project '${GCP_PROJECT_ID}' does not exist or is not accessible to ${ACTIVE_ACCOUNT:-<no account>}"
+# REST: Cloud Resource Manager projects.get
+PROJECT_HTTP_STATUS="$(curl -s -o /dev/null -w '%{http_code}' \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    "https://cloudresourcemanager.googleapis.com/v1/projects/${GCP_PROJECT_ID}" 2>/dev/null)"
+if [[ "${PROJECT_HTTP_STATUS}" != "200" ]]; then
+    fail "Project '${GCP_PROJECT_ID}' does not exist or is not accessible to ${ACTIVE_ACCOUNT:-<no account>} (HTTP ${PROJECT_HTTP_STATUS})"
     fix "gcloud projects list --filter=\"projectId:${GCP_PROJECT_ID}\"
 # If it doesn't exist:
 gcloud projects create ${GCP_PROJECT_ID}
@@ -136,15 +146,17 @@ fi
 # ---------------------------------------------------------------------------
 # 3. Billing enabled
 # ---------------------------------------------------------------------------
-BILLING_DESCRIBE_OUTPUT="$(gcloud billing projects describe "${GCP_PROJECT_ID}" \
-    --format="value(billingEnabled)" 2>&1)"
-BILLING_DESCRIBE_EXIT=$?
-if [[ ${BILLING_DESCRIBE_EXIT} -ne 0 ]]; then
-    fail "Unable to check billing status for '${GCP_PROJECT_ID}' (caller likely lacks billing.resourceAssociations.get): ${BILLING_DESCRIBE_OUTPUT}"
+# REST: Cloud Billing projects.getBillingInfo
+BILLING_FILE="$(mktemp)"
+BILLING_HTTP_STATUS="$(curl -s -o "${BILLING_FILE}" -w '%{http_code}' \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    "https://cloudbilling.googleapis.com/v1/projects/${GCP_PROJECT_ID}/billingInfo" 2>/dev/null)"
+if [[ "${BILLING_HTTP_STATUS}" != "200" ]]; then
+    fail "Unable to check billing status for '${GCP_PROJECT_ID}' (HTTP ${BILLING_HTTP_STATUS}; caller likely lacks billing.resourceAssociations.get): $(cat "${BILLING_FILE}")"
     fix "gcloud billing accounts list
 gcloud billing projects link ${GCP_PROJECT_ID} --billing-account=<BILLING_ACCOUNT_ID>"
 else
-    BILLING_ENABLED="${BILLING_DESCRIBE_OUTPUT}"
+    BILLING_ENABLED="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("billingEnabled", False))' < "${BILLING_FILE}" 2>/dev/null)"
     if [[ "${BILLING_ENABLED}" != "True" ]]; then
         fail "Billing is not enabled on project '${GCP_PROJECT_ID}'"
         fix "gcloud billing accounts list
@@ -153,6 +165,7 @@ gcloud billing projects link ${GCP_PROJECT_ID} --billing-account=<BILLING_ACCOUN
         pass "Billing is enabled on '${GCP_PROJECT_ID}'"
     fi
 fi
+rm -f "${BILLING_FILE}"
 
 # ---------------------------------------------------------------------------
 # 4. Required APIs enabled
@@ -163,14 +176,43 @@ REQUIRED_APIS=(
     "aiplatform.googleapis.com"        # Vertex AI (future google-genai/Vertex path)
     "generativelanguage.googleapis.com" # Gemini Developer API (current metadata_gen path)
 )
-ENABLED_APIS="$(gcloud services list --project="${GCP_PROJECT_ID}" \
-    --format="value(config.name)" 2>&1)"
+# REST: Service Usage services.list (state:ENABLED), paginated. `gcloud services
+# enable` stays in the fix text per the .sh→REST policy (enablement, not a check).
+ENABLED_APIS="$(ACCESS_TOKEN="${ACCESS_TOKEN}" GCP_PROJECT_ID="${GCP_PROJECT_ID}" python3 - <<'PY' 2>/dev/null
+import json, os, sys, urllib.request, urllib.error
+token = os.environ.get("ACCESS_TOKEN", "")
+proj = os.environ.get("GCP_PROJECT_ID", "")
+if not token:
+    sys.exit(2)
+base = (f"https://serviceusage.googleapis.com/v1/projects/{proj}/services"
+        "?filter=state:ENABLED&pageSize=200")
+names, page = [], ""
+try:
+    while True:
+        url = base + (f"&pageToken={page}" if page else "")
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.load(resp)
+        for svc in data.get("services", []):
+            name = (svc.get("config", {}) or {}).get("name") or svc.get("name", "").split("/")[-1]
+            if name:
+                names.append(name)
+        page = data.get("nextPageToken", "")
+        if not page:
+            break
+except urllib.error.HTTPError as exc:
+    sys.exit(3)
+except Exception:
+    sys.exit(4)
+print("\n".join(names))
+PY
+)"
 SERVICES_LIST_EXIT=$?
 
 if [[ ${SERVICES_LIST_EXIT} -ne 0 ]]; then
-    fail "Unable to list enabled APIs for '${GCP_PROJECT_ID}' (gcloud services list failed)"
+    fail "Unable to list enabled APIs for '${GCP_PROJECT_ID}' via Service Usage REST (exit ${SERVICES_LIST_EXIT}; e.g. missing serviceusage.services.list, or no ADC token)"
     fix "gcloud services list --project=${GCP_PROJECT_ID}
-# Investigate the error above (e.g. missing serviceusage.services.list permission),
+# If this fails on permissions, ask an admin to grant roles/serviceusage.serviceUsageViewer,
 # then re-run this preflight check."
 else
     for api in "${REQUIRED_APIS[@]}"; do
@@ -255,11 +297,8 @@ REQUIRED_PERMISSIONS=(
     # "storage.buckets.get"
 )
 
-# `gcloud projects test-iam-permissions` is not a valid gcloud command — the
-# testIamPermissions RPC is only exposed via the Cloud Resource Manager REST
-# API (or the google-cloud-resource-manager client library), so it is called
-# directly with curl using the same ADC access token the Python code uses.
-ACCESS_TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null)"
+# testIamPermissions is exposed only via the Cloud Resource Manager REST API,
+# called with curl using the shared ADC access token acquired in section 1.
 
 if [[ -z "${ACCESS_TOKEN}" ]]; then
     fail "Cannot check IAM permissions: no Application Default Credentials access token available"

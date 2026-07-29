@@ -13,7 +13,7 @@ google-cloud-aiplatform>=1.60.0
 # Vertex AI platform SDK — used if routing Gemini calls through Vertex AI
 # rather than the generativeai package directly
 
-google-generativeai>=0.7.2
+google-genai>=1.0.0
 # Gemini API client — metadata generation, response generation, re-ranking
 
 google-cloud-storage>=2.16.0

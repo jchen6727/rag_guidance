@@ -31,7 +31,9 @@ import argparse
 import json
 import logging
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -46,9 +48,73 @@ from ingestion.chunker import ContextAwareChunker
 from ingestion.metadata_gen import MetadataGenerator
 from ingestion.uploader import GCSUploader
 from ingestion.indexer import VertexSearchIndexer
+from ingestion.processing_strategy import ProcessingStrategy, build_strategy
 from models import ChunkMetadata
 
 logger = logging.getLogger(__name__)
+
+
+def _generate_all_metadata(
+    chunks: list,
+    strategy: ProcessingStrategy,
+    metadata_gen: MetadataGenerator,
+    source_file: str,
+    checkpoint_path: Path,
+) -> tuple[int, int]:
+    """Tag every chunk, honoring the processing strategy, checkpoint, and concurrency.
+
+    Units run concurrently (up to ``strategy.max_concurrency``); chunks within a
+    unit run in order so each can see its predecessors' context. Each chunk's
+    metadata is written to the checkpoint as it is produced (crash-safe), and
+    chunks already in the checkpoint are reused instead of re-tagged. Progress is
+    logged at the default level.
+
+    Returns:
+        (n_failures, n_reused).
+    """
+    cache = _load_metadata_checkpoint(checkpoint_path)
+    if cache:
+        logger.info("  Resuming from checkpoint %s: %d chunk(s) already tagged.",
+                    checkpoint_path, len(cache))
+    units = strategy.units(chunks)
+    n = len(chunks)
+    step = max(1, n // 20)  # progress roughly every 5%
+    lock = threading.Lock()
+    state = {"done": 0, "reused": 0, "failures": 0}
+    logger.info("  Tagging %d chunk(s) via '%s' strategy: %d unit(s), concurrency %d...",
+                n, strategy.name, len(units), strategy.max_concurrency)
+
+    def process_unit(unit: list) -> None:
+        for idx, chunk in enumerate(unit):
+            if chunk.chunk_id in cache:
+                chunk.metadata = ChunkMetadata(**cache[chunk.chunk_id])
+                with lock:
+                    state["reused"] += 1
+            else:
+                context = strategy.context_for(chunk, unit, idx)
+                try:
+                    metadata = metadata_gen.generate(chunk, context)
+                    metadata.source_file = source_file
+                    chunk.metadata = metadata
+                    with lock:
+                        _append_metadata_checkpoint(checkpoint_path, chunk)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("  Metadata failed for %s: %s", chunk.chunk_id, exc)
+                    with lock:
+                        state["failures"] += 1
+            with lock:
+                state["done"] += 1
+                done = state["done"]
+            if done % step == 0 or done == n:
+                logger.info("  ...metadata %d/%d (%d%%)%s", done, n, int(100 * done / n),
+                            f"  [{state['reused']} reused]" if state["reused"] else "")
+
+    with ThreadPoolExecutor(max_workers=max(1, strategy.max_concurrency)) as pool:
+        futures = [pool.submit(process_unit, u) for u in units]
+        for fut in as_completed(futures):
+            fut.result()  # surface any unexpected worker exception
+
+    return state["failures"], state["reused"]
 
 
 def _load_metadata_checkpoint(path: Path) -> dict[str, dict]:
@@ -93,6 +159,7 @@ def ingest_file(
     metadata_gen: MetadataGenerator,
     uploader: GCSUploader,
     indexer: VertexSearchIndexer,
+    strategy: ProcessingStrategy,
     dry_run: bool = False,
 ) -> dict:
     """Run the full ingestion pipeline for a single PDF.
@@ -114,6 +181,7 @@ def ingest_file(
         metadata_gen: Initialized MetadataGenerator.
         uploader: Initialized GCSUploader.
         indexer: Initialized VertexSearchIndexer.
+        strategy: Chunk-processing strategy (units + context + concurrency).
         dry_run: If True, run through extract/chunk/metadata but skip GCS upload
                  and Vertex AI import.
 
@@ -137,33 +205,11 @@ def ingest_file(
     chunks = chunker.chunk(doc)
     logger.info("  Produced %d chunk(s)", len(chunks))
 
-    # 4. Generate metadata (checkpoint-aware + resumable; progress at default level)
+    # 4. Generate metadata (strategy-driven, concurrent, checkpoint-aware/resumable)
     checkpoint_path = settings.checkpoint_dir / f"{doc_id}.jsonl"
-    cache = _load_metadata_checkpoint(checkpoint_path)
-    if cache:
-        logger.info("  Resuming from checkpoint %s: %d chunk(s) already tagged.",
-                    checkpoint_path, len(cache))
-    n_failures = 0
-    n_reused = 0
-    n = len(chunks)
-    step = max(1, n // 20)  # progress roughly every 5%
-    logger.info("  Generating metadata for %d chunk(s)...", n)
-    for i, chunk in enumerate(chunks, 1):
-        if chunk.chunk_id in cache:
-            chunk.metadata = ChunkMetadata(**cache[chunk.chunk_id])
-            n_reused += 1
-        else:
-            try:
-                metadata = metadata_gen.generate(chunk)
-                metadata.source_file = doc.source_file  # override with actual filename
-                chunk.metadata = metadata
-                _append_metadata_checkpoint(checkpoint_path, chunk)
-            except Exception as exc:
-                logger.warning("  Metadata failed for %s: %s", chunk.chunk_id, exc)
-                n_failures += 1
-        if i % step == 0 or i == n:
-            logger.info("  ...metadata %d/%d (%d%%)%s", i, n, int(100 * i / n),
-                        f"  [{n_reused} reused from checkpoint]" if n_reused else "")
+    n_failures, _ = _generate_all_metadata(
+        chunks, strategy, metadata_gen, doc.source_file, checkpoint_path
+    )
 
     # 5. Filter skip_doc_types
     skip_types = set(chunker._config.skip_doc_types)
@@ -319,9 +365,27 @@ def main() -> None:
         action="store_true",
         help="Verbose logging, including Google/gRPC internals — use to debug API failures.",
     )
+    parser.add_argument(
+        "--strategy",
+        default=None,
+        help="Chunk-processing strategy: 'chapter' (default) or 'independent'. "
+             "Overrides INGEST_STRATEGY.",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="Max chapters/chunks tagged concurrently. Overrides INGEST_CONCURRENCY.",
+    )
     args = parser.parse_args()
 
     setup_logging(args.verbose)
+
+    strategy = build_strategy(
+        args.strategy or settings.ingest_strategy,
+        args.concurrency if args.concurrency is not None else settings.ingest_concurrency,
+    )
+    logger.info("Processing strategy: %s (concurrency %d)", strategy.name, strategy.max_concurrency)
 
     # Fail fast with an actionable message on missing config or bad credentials
     # rather than a raw traceback deep in the first API call.
@@ -373,7 +437,7 @@ def main() -> None:
         try:
             result = ingest_file(
                 pdf_path, extractor, chunker, metadata_gen, uploader, indexer,
-                dry_run=args.dry_run,
+                strategy, dry_run=args.dry_run,
             )
         except Exception as exc:  # noqa: BLE001 — one bad file/API call shouldn't kill the batch
             log_api_error(logger, exc, f"ingesting {pdf_path.name}")

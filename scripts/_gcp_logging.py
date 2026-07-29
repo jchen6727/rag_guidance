@@ -132,7 +132,7 @@ _MESSAGE_HINTS: tuple[tuple[str, str], ...] = (
     ("has not been used", "The required Google API is not enabled. Enable it (see scripts/preflight_check.sh)."),
     ("SERVICE_DISABLED", "The required Google API is not enabled. Enable it (see scripts/preflight_check.sh)."),
     ("billing", "Billing may be disabled on the project. Enable billing, then retry."),
-    ("API key", "Gemini could not authenticate. Set GEMINI_API_KEY in .env, or use  gcloud auth application-default login."),
+    ("credential", "Gemini/Vertex could not authenticate. Run  gcloud auth application-default login  and set GCP_PROJECT_ID in .env."),
 )
 
 

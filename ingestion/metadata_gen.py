@@ -16,14 +16,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from config.schema_loader import SchemaVocabulary
+from config.settings import settings
 from models import Chunk, ChunkMetadata
 
 logger = logging.getLogger(__name__)
@@ -57,17 +58,19 @@ class MetadataGenerator:
         model_name: str = "gemini-1.5-pro",
         schema_path: Optional[Path] = None,
         temperature: float = 0.0,
-        api_key: Optional[str] = None,
     ) -> None:
         """
         Args:
             model_name: Gemini model identifier. gemini-1.5-pro is recommended
                         for long-context metadata extraction; gemini-1.5-flash
                         is acceptable for short chunks if cost is a concern.
-            schema_path: Path to config/metadata_schema.json. Loaded at init;
-                         defaults to the project-local path if None.
+            schema_path: Path to the active metadata schema (config/rta_v1.json).
+                         Loaded at init; defaults to the project-local path if None.
             temperature: Gemini sampling temperature. 0.0 for deterministic output.
-            api_key: Gemini API key. Falls back to GEMINI_API_KEY env var if None.
+
+        Auth: uses Vertex AI via Application Default Credentials (ADC) — there is
+        no API-key path (migrated 2026-07-27, devlog.md#DONE(genai-migration)).
+        Run ``gcloud auth application-default login`` and set GCP_PROJECT_ID.
         """
         self._model_name = model_name
         self._temperature = temperature
@@ -78,8 +81,7 @@ class MetadataGenerator:
         # Hand-authored prompt scaffolding (config/ingestion_prompt.yaml); falls
         # back to built-in defaults if the file is missing or unreadable.
         self._prompt_cfg = self._load_prompt_config()
-        self._client: Optional[genai.GenerativeModel] = None
-        self._api_key = api_key
+        self._client: Optional[genai.Client] = None
 
     def generate(self, chunk: Chunk, context_window: str = "") -> ChunkMetadata:
         """Generate metadata for a single chunk.
@@ -284,7 +286,14 @@ class MetadataGenerator:
 
         for attempt in range(_MAX_RETRIES):
             try:
-                response = client.generate_content(prompt)
+                response = client.models.generate_content(
+                    model=self._model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=self._temperature,
+                        response_mime_type="application/json",
+                    ),
+                )
                 return json.loads(response.text)
             except json.JSONDecodeError as exc:
                 raise GeminiExtractionError(
@@ -399,26 +408,23 @@ class MetadataGenerator:
         with open(schema_path) as f:
             return json.load(f)
 
-    def _get_client(self) -> genai.GenerativeModel:
-        """Lazy-initialize and return the Gemini generative model client.
+    def _get_client(self) -> genai.Client:
+        """Lazy-initialize and return the Vertex AI Gemini client.
+
+        Uses Vertex AI (``vertexai=True``) with Application Default Credentials —
+        the same auth as the Discovery Engine clients, no API key. The Vertex
+        location is the raw ``gcp_location`` compute region (unlike Discovery
+        Engine, which needs the derived multi-region).
 
         Returns:
-            Configured GenerativeModel instance.
+            Configured ``google.genai.Client``.
         """
-        if self._client is not None:
-            return self._client
-
-        api_key = self._api_key or os.environ.get("GEMINI_API_KEY")
-        if api_key:
-            genai.configure(api_key=api_key)
-
-        self._client = genai.GenerativeModel(
-            model_name=self._model_name,
-            generation_config=genai.types.GenerationConfig(
-                temperature=self._temperature,
-                response_mime_type="application/json",
-            ),
-        )
+        if self._client is None:
+            self._client = genai.Client(
+                vertexai=True,
+                project=settings.gcp_project_id,
+                location=settings.gcp_location,
+            )
         return self._client
 
 

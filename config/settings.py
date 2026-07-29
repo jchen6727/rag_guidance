@@ -148,8 +148,9 @@ class Settings:
 
     @property
     def gemini_api_key(self) -> str | None:
-        """Gemini API key. If None, falls back to Application Default Credentials
-        via Vertex AI SDK (recommended for GCP-hosted deployments)."""
+        """DEPRECATED (2026-07-27). The pipeline uses Vertex AI + ADC, not an API
+        key — see devlog.md#DONE(genai-migration). Retained only so any external
+        tooling that still reads it does not break; nothing in the pipeline uses it."""
         return os.environ.get("GEMINI_API_KEY")
 
     @property
@@ -194,6 +195,26 @@ class Settings:
     def manifest_path(self) -> Path:
         """Path to the ingestion manifest JSON file."""
         return Path(os.environ.get("MANIFEST_PATH", ".ingestion_manifest.json"))
+
+    @property
+    def ingest_strategy(self) -> str:
+        """Chunk-processing strategy name ('chapter' | 'independent').
+
+        'chapter' (default) tags each chunk with its chapter context and runs
+        chapters concurrently but chunks-within-a-chapter sequentially.
+        'independent' tags every chunk in isolation at maximum concurrency.
+        See ingestion/processing_strategy.py.
+        """
+        return os.environ.get("INGEST_STRATEGY", "chapter")
+
+    @property
+    def ingest_concurrency(self) -> int:
+        """Max units (chapters / chunks) tagged concurrently. Keep modest to
+        respect the Gemini/Vertex quota. Default 4."""
+        try:
+            return max(1, int(os.environ.get("INGEST_CONCURRENCY", "4")))
+        except ValueError:
+            return 4
 
     @property
     def checkpoint_dir(self) -> Path:

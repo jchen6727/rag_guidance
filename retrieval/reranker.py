@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-import google.generativeai as genai
+from google import genai  # noqa: F401 — query path is stubbed; full Vertex/genai migration pending (devlog.md#TODO(genai-migration-querypath))
 
 from models import SearchResult
 
